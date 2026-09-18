@@ -1,0 +1,153 @@
+package walk
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/rishabh-yadav11/file-integrity-checker/internal/model"
+)
+
+func mustScan(t *testing.T, root string, opts Options) []model.Entry {
+	t.Helper()
+	entries, err := Scan(root, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
+func TestCompareAllUnmodified(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Entries: mustScan(t, root, opts)}
+	results, err := Compare(root, base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("no results")
+	}
+	for _, r := range results {
+		if r.Kind != model.KindUnmodified {
+			t.Errorf("%s: got %s, want unmodified (%v)", r.Path, r.Kind, r.Reasons)
+		}
+	}
+}
+
+func TestCompareModified(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Entries: mustScan(t, root, opts)}
+	if err := os.WriteFile(filepath.Join(root, "a.log"), []byte("TAMPERED"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Compare(root, base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]model.Result{}
+	for _, r := range results {
+		byPath[r.Path] = r
+	}
+	mod, ok := byPath["a.log"]
+	if !ok || mod.Kind != model.KindModified {
+		t.Fatalf("a.log result = %+v, want modified", byPath["a.log"])
+	}
+	found := false
+	for _, r := range mod.Reasons {
+		if r == "hash" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected hash reason, got %v", mod.Reasons)
+	}
+}
+
+func TestCompareNewAndMissing(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Entries: mustScan(t, root, opts)}
+	if err := os.Remove(filepath.Join(root, "b.log")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "z.log"), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Compare(root, base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]model.ChangeKind{}
+	for _, r := range results {
+		kinds[r.Path] = r.Kind
+	}
+	if kinds["b.log"] != model.KindMissing {
+		t.Errorf("b.log = %v, want missing", kinds["b.log"])
+	}
+	if kinds["z.log"] != model.KindNew {
+		t.Errorf("z.log = %v, want new", kinds["z.log"])
+	}
+	if kinds["a.log"] != model.KindUnmodified {
+		t.Errorf("a.log = %v, want unmodified", kinds["a.log"])
+	}
+}
+
+func TestCompareAlgoMismatch(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	base := model.Baseline{Algorithm: model.AlgoSHA512}
+	if _, err := Compare(root, base, Options{Algo: model.AlgoSHA256}); err == nil {
+		t.Fatal("expected algorithm mismatch error")
+	}
+}
+
+func TestDiffReasons(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	old := model.Entry{Path: "x", Hash: "h", Size: 10, Mode: 0o644, UID: 0, GID: 0, Mtime: now}
+	tests := []struct {
+		name     string
+		mut      func(*model.Entry)
+		wantPfx  string
+		wantNone bool
+	}{
+		{"hash", func(e *model.Entry) { e.Hash = "different" }, "hash", false},
+		{"size", func(e *model.Entry) { e.Size = 999 }, "size", false},
+		{"mode", func(e *model.Entry) { e.Mode = 0o600 }, "mode", false},
+		{"uid", func(e *model.Entry) { e.UID = 99 }, "uid", false},
+		{"gid", func(e *model.Entry) { e.GID = 99 }, "gid", false},
+		{"mtime", func(e *model.Entry) { e.Mtime = now.Add(time.Minute) }, "mtime", false},
+		{"clean", func(e *model.Entry) {}, "", true},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cur := old
+			tt.mut(&cur)
+			reasons := Diff(cur, old)
+			if tt.wantNone {
+				if len(reasons) != 0 {
+					t.Fatalf("expected no reasons, got %v", reasons)
+				}
+				return
+			}
+			found := false
+			for _, r := range reasons {
+				if strings.HasPrefix(r, tt.wantPfx) {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("reasons %v missing prefix %q", reasons, tt.wantPfx)
+			}
+		})
+	}
+}
