@@ -89,11 +89,11 @@ Exit codes: `0` = clean, `1` = changes found, `2` = error.
 
 ```yaml
 baseline: /var/lib/integrity-check/baseline.json
-algo: sha256
+algorithm: sha256
 workers: 8
 format: text
 exclude: ["*.tmp", "cache/"]
-webhook: https://alerts.example.internal/hook
+webhook_url: https://alerts.example.internal/hook
 ```
 
 Command-line flags override the config file; the HMAC key comes from

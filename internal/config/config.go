@@ -22,6 +22,7 @@ type Config struct {
 	Color      *bool    `yaml:"color"`
 	Quiet      bool     `yaml:"quiet"`
 	LogFile    string   `yaml:"log_file"`
+	LogLevel   string   `yaml:"log_level"`
 	WebhookURL string   `yaml:"webhook_url"`
 	KeyFile    string   `yaml:"key_file"`
 	Workers    int      `yaml:"workers"`
