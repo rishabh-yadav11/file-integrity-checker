@@ -91,14 +91,24 @@ func NewPool(workers int) *Pool {
 	return p
 }
 
-// Start launches the worker goroutines.
+// Start launches the worker goroutines. A panic inside hashing (e.g. a
+// defective hasher for an unexpected algo) is converted into a per-file
+// error instead of crashing the whole process mid-scan.
 func (p *Pool) Start(algo model.Algorithm) {
 	for i := 0; i < p.workers; i++ {
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
 			for job := range p.jobs {
-				sum, err := File(job.Path, algo)
+				sum, err := func() (sum string, err error) {
+					defer func() {
+						if r := recover(); r != nil {
+							sum = ""
+							err = fmt.Errorf("hash %s: panicked: %v", job.Path, r)
+						}
+					}()
+					return File(job.Path, algo)
+				}()
 				if err != nil {
 					p.errCh <- err
 					continue

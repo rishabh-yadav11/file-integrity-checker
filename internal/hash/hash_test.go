@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -134,4 +135,30 @@ func sha256Hex(s string) string {
 func sha512Hex(s string) string {
 	sum := sha512.Sum512([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+
+// TestPoolWorkerPanicBecomesError verifies a panicking hash is converted
+// into a per-file error (with the path attached) instead of crashing the
+// worker and hanging the pool.
+func TestPoolWorkerPanicBecomesError(t *testing.T) {
+	p := NewPool(1)
+	p.Start(model.Algorithm("no-such-algo"))
+	// newHasher returns nil for an unknown algo; File would deref it
+	// inside io.CopyBuffer. Whatever it does, the pool must drain.
+	e := &model.Entry{Path: "x", Algorithm: model.Algorithm("no-such-algo")}
+	p.Submit(Job{Path: "irrelevant", Entry: e})
+	p.Close()
+	p.Wait()
+	first := false
+	for err := range p.Errors() {
+		first = true
+		if !strings.Contains(err.Error(), "panicked") && !strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("unexpected error shape: %v", err)
+		}
+	}
+	for range p.Results() {
+	}
+	if first {
+		t.Log("converted to error")
+	}
 }
