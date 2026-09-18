@@ -27,11 +27,15 @@ From source (Go 1.27+):
 make build            # produces bin/integrity-check
 ```
 
-Or with Docker:
+Or with Docker (mount the directory and pass the subcommand; the
+baseline must be reachable inside the container, e.g. another mount or
+a config file):
 
 ```sh
 docker build -t integrity-check .
-docker run --rm -e IC_KEY=secret -v "$PWD/logs:/data" integrity-check /data
+docker run --rm --user "$(id -u):$(id -g)" -e IC_KEY=secret \
+  -v "$PWD/logs:/data" -v "$PWD/b.json:/b.json:ro" \
+  integrity-check check /data --baseline /b.json -q
 ```
 
 Releases for Linux/macOS/Windows (amd64/arm64) are built by GoReleaser on
