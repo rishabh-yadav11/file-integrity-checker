@@ -50,7 +50,7 @@ func File(path string, algo model.Algorithm) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := io.CopyBuffer(h, io.LimitReader(f, 1<<62), make([]byte, chunkSize)); err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}

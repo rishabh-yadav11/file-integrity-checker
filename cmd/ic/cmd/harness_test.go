@@ -13,7 +13,7 @@ func runCLIIn(t *testing.T, cwd, dir string, env map[string]string, args ...stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(oldWd)
+	defer func() { _ = os.Chdir(oldWd) }()
 	if err := os.Chdir(cwd); err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func runCLIIn(t *testing.T, cwd, dir string, env map[string]string, args ...stri
 	code := ExecuteMain(args)
 	os.Stdout = oldStdout
 	os.Stderr = oldStderr
-	w.Close()
+	_ = w.Close()
 	buf := make([]byte, 1<<16)
 	var out strings.Builder
 	for {

@@ -94,17 +94,17 @@ func (s *Store) Save(path string, b model.Baseline) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op after successful rename
+	defer func() { _ = os.Remove(tmpName) }() // no-op after successful rename
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if _, err := tmp.Write(payload); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
@@ -115,8 +115,8 @@ func (s *Store) Save(path string, b model.Baseline) error {
 	}
 	// Best-effort directory fsync so the rename survives power loss.
 	if dfd, err := os.Open(dir); err == nil {
-		dfd.Sync()
-		dfd.Close()
+		_ = dfd.Sync()
+		_ = dfd.Close()
 	}
 	return nil
 }

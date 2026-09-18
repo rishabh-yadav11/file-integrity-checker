@@ -57,10 +57,10 @@ func ExecuteMain(args []string) int {
 	root := NewRootCommand()
 	root.SetArgs(args)
 	err := root.Execute()
-	switch {
-	case err == nil:
+	switch err {
+	case nil:
 		return ExitOK
-	case err == errChangesFound:
+	case errChangesFound:
 		return ExitChanges
 	default:
 		fmt.Fprintln(os.Stderr, "error:", err)

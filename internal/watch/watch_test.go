@@ -24,11 +24,6 @@ func (t *eventTrap) trap(ev Event) {
 	}
 }
 
-// trapChan is a helper returning the channel; placeholder indirection.
-type captureWriter struct{ t *testing.T }
-
-func (c *captureWriter) Write(p []byte) (int, error) { return len(p), nil }
-
 // makeWatchFixture creates a watched tree with a baseline.
 func makeWatchFixture(t *testing.T) (string, model.Baseline, []byte) {
 	t.Helper()

@@ -64,7 +64,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("watch: %w", err)
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	// Root must exist: fail fast rather than silently watching nothing.
 	if fi, err := os.Stat(cfg.Root); err != nil {
@@ -289,5 +289,5 @@ func postWebhook(url string, ev Event) {
 		slog.Warn("webhook post failed", slog.String("err", err.Error()))
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }

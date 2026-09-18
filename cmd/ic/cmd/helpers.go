@@ -190,16 +190,6 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 	return walk.Scan(path, r.scanOpts())
 }
 
-func addAlgoFlag(cmd *cobra.Command, p *string) {
-	cmd.Flags().StringVar(p, "algo", "", "hash algorithm: sha256|sha512|blake2b")
-	_ = cmd.RegisterFlagCompletionFunc("algo", cobra.NoFileCompletions)
-}
-
-func addFormatFlag(cmd *cobra.Command, p *string) {
-	cmd.Flags().StringVar(p, "format", "", "output format: text|json")
-	_ = cmd.RegisterFlagCompletionFunc("format", cobra.NoFileCompletions)
-}
-
 // cmdColor returns the changed state of a bool flag (false if unset).
 func cmdColor(cmd *cobra.Command, name string) bool {
 	f := cmd.Flags().Lookup(name)

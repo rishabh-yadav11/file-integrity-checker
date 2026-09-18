@@ -38,7 +38,7 @@ func newInitCmd() *cobra.Command {
 			if err := r.store.Save(r.cfg.Baseline, b); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stdout, "baseline written: %s (%d files, %s)\n", r.cfg.Baseline, len(entries), r.algo)
+			_, _ = fmt.Fprintf(os.Stdout, "baseline written: %s (%d files, %s)\n", r.cfg.Baseline, len(entries), r.algo)
 			return nil
 		},
 	}
@@ -74,7 +74,7 @@ func newCheckCmd() *cobra.Command {
 			}
 			s := report.Count(results)
 			if r.cfg.Format != "json" {
-				fmt.Fprintln(stdout(), s.Text())
+				_, _ = fmt.Fprintln(stdout(), s.Text())
 			}
 			if s.Changed() {
 				return errChangesFound
@@ -110,7 +110,7 @@ func newUpdateCmd() *cobra.Command {
 			if err := r.store.Save(r.cfg.Baseline, b); err != nil {
 				return err
 			}
-			fmt.Fprintf(stdout(), "baseline updated: %s (%d files)\n", r.cfg.Baseline, len(entries))
+			_, _ = fmt.Fprintf(stdout(), "baseline updated: %s (%d files)\n", r.cfg.Baseline, len(entries))
 			return nil
 		},
 	}
@@ -130,7 +130,7 @@ func newVerifyBaselineCmd() *cobra.Command {
 			if _, err := r.store.Load(r.cfg.Baseline); err != nil {
 				return err
 			}
-			fmt.Fprintln(stdout(), "baseline OK")
+			_, _ = fmt.Fprintln(stdout(), "baseline OK")
 			return nil
 		},
 	}
