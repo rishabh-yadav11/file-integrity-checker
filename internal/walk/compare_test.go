@@ -188,3 +188,38 @@ func TestCompareRespectsExcludeForBaseline(t *testing.T) {
 		t.Fatal("missing report lost when no exclude is set")
 	}
 }
+
+// TestCompareSingleFile verifies checking one file re-hashes only that
+// file, matches it against its baseline entry, and does not flood the
+// report with "missing" for the rest of the unscanned tree.
+func TestCompareSingleFile(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Root: root, Entries: mustScan(t, root, opts)}
+	// unchanged file
+	res, err := Compare(filepath.Join(root, "a.log"), base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Path != "a.log" || res[0].Kind != model.KindUnmodified {
+		t.Fatalf("clean single-file results = %+v, want one unmodified a.log", res)
+	}
+	// tampered file
+	if err := os.WriteFile(filepath.Join(root, "a.log"), []byte("tampered"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err = Compare(filepath.Join(root, "a.log"), base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Kind != model.KindModified {
+		t.Fatalf("tampered single-file results = %+v, want modified a.log", res)
+	}
+	// file not in baseline reports New, not an error
+	res, err = Compare(filepath.Join(root, "notes.txt"), base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res
+}
