@@ -89,6 +89,11 @@ func (s *Store) Save(path string, b model.Baseline) error {
 	payload = append(payload, '\n')
 
 	dir := filepath.Dir(path)
+	// The requested baseline location may live in a directory that does
+	// not exist yet (e.g. --baseline state/baseline.json on first run).
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("baseline: create %s: %w", dir, err)
+	}
 	tmp, err := os.CreateTemp(dir, ".baseline-*.tmp")
 	if err != nil {
 		return err

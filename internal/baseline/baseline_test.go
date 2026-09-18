@@ -278,3 +278,24 @@ func FuzzLoad(f *testing.F) {
 		}
 	})
 }
+
+// TestSaveCreatesMissingParentDir verifies Save creates the baseline's
+// parent directory (0700) instead of failing when it does not exist.
+func TestSaveCreatesMissingParentDir(t *testing.T) {
+	t.Parallel()
+	st, err := New(testKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state", "nested", "baseline.json")
+	if err := st.Save(path, sampleBaseline(time.Now().UTC())); err != nil {
+		t.Fatalf("Save into missing dir: %v", err)
+	}
+	if fi, err := os.Stat(filepath.Dir(path)); err != nil || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("parent dir mode = %v (%v), want 0700", fi.Mode().Perm(), err)
+	}
+	if _, err := st.Load(path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+}
