@@ -40,6 +40,19 @@ jobs:
           echo "total coverage: ${total}%"
           awk -v t="$total" 'BEGIN { if (t < 85.0) { print "coverage below 85%: " t; exit 1 } }'
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          check-latest: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
