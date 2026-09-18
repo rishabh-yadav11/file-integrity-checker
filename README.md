@@ -127,7 +127,9 @@ before the attacker had access.
   `verify-baseline` only proves the file matches its own HMAC.
 - **Live attackers racing the watcher.** Watch mode is best-effort;
   `fsnotify` events are debounced, not a security boundary. Always run
-  `check` from a trusted context for audit conclusions.
+  `check` from a trusted context for audit conclusions. Watch compares
+  against the baseline snapshot loaded at startup: run `update` before
+  starting `watch`, or restart `watch` after updating the baseline.
 - **Attacker with root on the scanning host.** A root attacker can
   subvert the binary, its config, or the kernel. Run integrity-check
   from read-only media against a read-only mount for high-assurance use.
