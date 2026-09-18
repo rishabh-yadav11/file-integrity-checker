@@ -221,3 +221,28 @@ func TestHandleEventSymlinkSwap(t *testing.T) {
 		t.Fatal("no event emitted for fresh symlink")
 	}
 }
+
+// TestHandleEventRespectsExclude verifies handleEvent stays silent for
+// paths the user excluded (file-level globs; dirs are pruned earlier).
+func TestHandleEventRespectsExclude(t *testing.T) {
+	root, base, _ := makeWatchFixture(t)
+	trap := &eventTrap{ch: make(chan Event, 8)}
+	setTrap(trap.trap)
+	defer setTrap(nil)
+	cfg := Config{
+		Root:     root,
+		ScanOpts: walk.Options{Algo: model.AlgoSHA256, Exclude: []string{"two.log"}},
+		Baseline: base,
+		Out:      nullWriter{},
+		Log:      testLogger(),
+	}
+	if err := os.WriteFile(filepath.Join(root, "two.log"), []byte("tampered"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handleEvent(context.Background(), cfg, filepath.Join(root, "two.log"))
+	select {
+	case ev := <-trap.ch:
+		t.Fatalf("unexpected event for excluded path: %+v", ev)
+	default:
+	}
+}

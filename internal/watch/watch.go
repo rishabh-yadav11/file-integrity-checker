@@ -229,6 +229,12 @@ func handleEvent(ctx context.Context, cfg Config, path string) {
 		return // shutting down: skip pending work
 	}
 	rel, _ := filepath.Rel(cfg.Root, path)
+	// Respect the same include/exclude view as check: events on paths
+	// the user filtered out must not produce alerts. (Dirs are already
+	// pruned from the watcher; this covers file-level globs.)
+	if cfg.ScanOpts.Skip(filepath.ToSlash(rel), false) {
+		return
+	}
 	// Rotated logs: the old name vanished => report as missing only if
 	// it was in the baseline; the new file is reported as new.
 	if _, err := os.Lstat(path); err != nil {
