@@ -145,3 +145,44 @@ func TestInitSingleFile(t *testing.T) {
 		t.Fatalf("verify after single-file init: %d %s", code, out)
 	}
 }
+
+// TestInitSingleFileBaselineRoundTrip verifies init/check/update on a
+// single-file path produce a parent-rooted baseline with consistent
+// paths (no "." or "../"-prefixed entries).
+func TestInitSingleFileBaselineRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	code, out := runCLIIn(t, dir, dir, env, "init", "f.txt", "--baseline", "b.json")
+	if code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "b.json"))
+	if strings.Contains(string(raw), `".."`) {
+		t.Fatalf("baseline contains ../ entries: %s", raw)
+	}
+	code, out = runCLIIn(t, dir, dir, env, "check", "f.txt", "--baseline", "b.json")
+	if code != ExitOK || !contains(out, "UNMODIFIED f.txt") {
+		t.Fatalf("clean single-file check: %d %s", code, out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out = runCLIIn(t, dir, dir, env, "check", "f.txt", "--baseline", "b.json")
+	if code != ExitChanges || !contains(out, "MODIFIED f.txt") {
+		t.Fatalf("tamper check: %d %s", code, out)
+	}
+	code, out = runCLIIn(t, dir, dir, env, "update", "f.txt", "--baseline", "b.json")
+	if code != ExitOK || contains(out, "outside baseline root") {
+		t.Fatalf("update single-file: %d %s", code, out)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(dir, "b.json")); strings.Contains(string(raw), `"../`) {
+		t.Fatalf("update wrote ../-prefixed entries: %s", raw)
+	}
+	code, out = runCLIIn(t, dir, dir, env, "check", "f.txt", "--baseline", "b.json")
+	if code != ExitOK {
+		t.Fatalf("post-update check: %d %s", code, out)
+	}
+}

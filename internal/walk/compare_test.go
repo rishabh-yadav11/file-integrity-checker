@@ -223,3 +223,21 @@ func TestCompareSingleFile(t *testing.T) {
 	}
 	_ = res
 }
+
+// TestCompareSingleFileLegacyRoot covers baselines written by older
+// versions of `init <file>`, which stored Root as the file itself and
+// entries by base name. Check of that file must still resolve the
+// entry (parent becomes the effective root) instead of reporting ".".
+func TestCompareSingleFileLegacyRoot(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Root: filepath.Join(root, "a.log"), Entries: mustScan(t, root, opts)}
+	res, err := Compare(filepath.Join(root, "a.log"), base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Path != "a.log" || res[0].Kind != model.KindUnmodified {
+		t.Fatalf("legacy single-file results = %+v, want one unmodified a.log", res)
+	}
+}

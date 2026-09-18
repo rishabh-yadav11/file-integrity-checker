@@ -29,12 +29,23 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			abs, _ := filepath.Abs(args[0])
+			abs, err := filepath.Abs(args[0])
+			if err != nil {
+				return err
+			}
+			// A single-file baseline is parent-rooted: the entry is
+			// stored under the file's base name relative to its
+			// directory, so `check`/`update` of the same file (or its
+			// directory) resolve paths consistently.
+			root := abs
+			if info, statErr := os.Stat(abs); statErr == nil && !info.IsDir() {
+				root = filepath.Dir(abs)
+			}
 			b := model.Baseline{
 				Version:   model.BaselineVersion,
 				Algorithm: r.algo,
 				CreatedAt: time.Now(),
-				Root:      abs,
+				Root:      root,
 				Entries:   entries,
 			}
 			if err := r.store.Save(r.cfg.Baseline, b); err != nil {
@@ -136,11 +147,19 @@ func newUpdateCmd() *cobra.Command {
 			if r.algo != base.Algorithm {
 				return fmt.Errorf("update: baseline uses %s; refusing to write %s hashes into it (re-init with --algo %s to switch algorithms)", base.Algorithm, r.algo, r.algo)
 			}
-			entries, err := r.scan(args[0])
-			if err != nil {
-				return err
+			// Legacy single-file baselines stored Root as the file
+			// itself; their entries are keyed by base name relative to
+			// the parent dir. Treat the parent as the effective root so
+			// updates merge under the right paths instead of writing
+			// "../"-prefixed entries.
+			abs, absErr := filepath.Abs(args[0])
+			if absErr != nil {
+				return absErr
 			}
-			abs, err := filepath.Abs(args[0])
+			if stat, statErr := os.Stat(abs); statErr == nil && !stat.IsDir() && base.Root == abs {
+				base.Root = filepath.Dir(abs)
+			}
+			entries, err := r.scan(args[0])
 			if err != nil {
 				return err
 			}

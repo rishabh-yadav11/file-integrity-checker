@@ -10,6 +10,16 @@ import (
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/model"
 )
 
+// absRoot returns the absolute form of a scan/check root, tolerating
+// errors by returning the input unchanged.
+func absRoot(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	return abs
+}
+
 // Compare hashes the current state of root (via Scan, or a single file)
 // and diffs it against the baseline. Returns results for every relevant
 // file: Unmodified, Modified (with reasons), New, Missing. A single-file
@@ -21,6 +31,14 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 	baseRoot := base.Root
 	if baseRoot == "" {
 		baseRoot = root
+	} else if baseRoot == absRoot(root) {
+		// Legacy single-file baselines stored Root as the file itself.
+		// Their entries are keyed by base name relative to the parent
+		// directory; treat the parent as the effective root so the
+		// entry resolves instead of collapsing to ".".
+		if info, err := os.Stat(root); err == nil && !info.IsDir() {
+			baseRoot = filepath.Dir(absRoot(root))
+		}
 	}
 	var (
 		current    []model.Entry
