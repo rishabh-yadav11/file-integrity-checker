@@ -262,10 +262,17 @@ func handleEvent(ctx context.Context, cfg Config, path string) {
 // trapSink allows tests to capture events; nil in production.
 var trapSink func(Event)
 
-// emit logs, traps (tests), and optionally webhooks an event.
+// emit logs, traps (tests), and optionally webhooks an event. The event
+// is also serialized as one JSON line to Out when Out is a non-nil
+// writer distinct from the default.
 func emit(cfg Config, ev Event) {
 	if trapSink != nil {
 		trapSink(ev)
+	}
+	if cfg.Out != nil {
+		if b, err := json.Marshal(ev); err == nil {
+			_, _ = cfg.Out.Write(append(b, '\n'))
+		}
 	}
 	cfg.Log.Warn("tamper event", slog.String("path", ev.Path), slog.String("op", ev.Op), slog.String("kind", string(ev.Kind)))
 	if cfg.WebhookURL != "" {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,5 +142,24 @@ func TestHandleEventNewFile(t *testing.T) {
 		}
 	default:
 		t.Fatal("no New event emitted for fresh file")
+	}
+}
+
+// TestEmitWritesToOut verifies emit serializes the event as a JSON line
+// to the configured Out writer (previously Out was never written to).
+func TestEmitWritesToOut(t *testing.T) {
+	var buf strings.Builder
+	cfg := Config{
+		Out: &buf,
+		Log: testLogger(),
+	}
+	emit(cfg, Event{Path: "a.log", Op: "write", Kind: model.KindModified, Time: time.Now()})
+	line := buf.String()
+	if !strings.Contains(line, `"a.log"`) || !strings.Contains(line, `"write"`) {
+		t.Fatalf("Out = %q, want JSON line with path and op", line)
+	}
+	// Ensure it is a single line ending in newline.
+	if !strings.HasSuffix(line, "\n") || strings.Count(strings.TrimSuffix(line, "\n"), "\n") != 0 {
+		t.Fatalf("Out = %q, want exactly one JSON line", line)
 	}
 }
