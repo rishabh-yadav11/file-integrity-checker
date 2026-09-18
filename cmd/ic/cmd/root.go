@@ -45,15 +45,7 @@ func NewRootCommand() *cobra.Command {
 
 // Execute runs the CLI and maps errors to exit codes.
 func Execute() int {
-	root := NewRootCommand()
-	if err := root.Execute(); err != nil {
-		if err == errChangesFound {
-			return ExitChanges
-		}
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return ExitError
-	}
-	return ExitOK
+	return ExecuteMain(os.Args[1:])
 }
 
 // ExecuteMain is the testable entrypoint returning an exit code.

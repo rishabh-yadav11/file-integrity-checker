@@ -51,7 +51,8 @@ func newWatchCmd() *cobra.Command {
 }
 
 // cmdCtx returns a context cancelled on SIGINT/SIGTERM.
-func cmdCtx() context.Context {
+// Indirected so tests can supply their own context.
+var cmdCtx = func() context.Context {
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	return ctx
 }

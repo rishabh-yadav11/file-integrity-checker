@@ -168,10 +168,24 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 		pool.Start(r.algo)
 		pool.Submit(hash.Job{Path: abs, Entry: e})
 		pool.Close()
-		for out := range pool.Results() {
-			return []model.Entry{*out}, nil
+		pool.Wait() // closes results/errors channels once workers finish
+		var first error
+		for err := range pool.Errors() {
+			if first == nil {
+				first = err
+			}
 		}
-		return nil, fmt.Errorf("hash failed for %s", path)
+		if first != nil {
+			return nil, first
+		}
+		var out []model.Entry
+		for res := range pool.Results() {
+			out = append(out, *res)
+		}
+		if len(out) == 0 {
+			return nil, fmt.Errorf("hash failed for %s", path)
+		}
+		return out, nil
 	}
 	return walk.Scan(path, r.scanOpts())
 }
