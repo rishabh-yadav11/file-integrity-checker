@@ -63,11 +63,11 @@ type Result struct {
 
 // Baseline is the signed on-disk document produced by init/update.
 type Baseline struct {
-	Version   int          `json:"version"`
-	Algorithm Algorithm    `json:"algorithm"`
-	CreatedAt time.Time    `json:"created_at"`
-	Root      string       `json:"root"`
-	Entries   []Entry      `json:"entries"`
+	Version   int       `json:"version"`
+	Algorithm Algorithm `json:"algorithm"`
+	CreatedAt time.Time `json:"created_at"`
+	Root      string    `json:"root"`
+	Entries   []Entry   `json:"entries"`
 }
 
 // BaselineVersion is the current baseline format version.

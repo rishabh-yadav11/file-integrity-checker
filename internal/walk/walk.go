@@ -177,7 +177,7 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 	}
 
 	pool.Close()
-	pool.Wait()   // workers done; closes results and errors channels
+	pool.Wait()    // workers done; closes results and errors channels
 	drainWG.Wait() // collector has seen every result
 
 	if len(errs) > 0 {

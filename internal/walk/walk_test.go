@@ -91,8 +91,8 @@ func TestScanSymlinksSkipped(t *testing.T) {
 func TestScanExclude(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		exclude []string
+		name     string
+		exclude  []string
 		wantGone []string
 		wantKeep []string
 	}{
@@ -132,10 +132,10 @@ func TestScanExclude(t *testing.T) {
 func TestScanInclude(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name      string
-		include   []string
-		wantIn    []string
-		wantOut   []string
+		name    string
+		include []string
+		wantIn  []string
+		wantOut []string
 	}{
 		{"top-level glob", []string{"*.log"}, []string{"a.log", "b.log", "sub/c.log", "sub/deep/d.log", "skipme/secret.log"}, []string{"notes.txt"}},
 		{"recursive glob", []string{"**/*.log"}, []string{"a.log", "b.log", "sub/c.log", "sub/deep/d.log"}, []string{"notes.txt"}},
