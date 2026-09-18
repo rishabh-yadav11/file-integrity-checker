@@ -51,8 +51,6 @@ integrity-check update /var/log/myapp --baseline /var/myapp.json   # accept chan
 integrity-check watch /var/log/myapp --baseline /var/myapp.json --webhook https://hooks.example/x
 ```
 
-Exit codes: `0` clean, `1` changes found, `2` error.
-
 ### Example session
 
 ```console
