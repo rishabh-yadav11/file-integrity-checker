@@ -32,7 +32,6 @@ jobs:
         run: go test -race ./... -timeout 10m
       - name: Fuzz baseline parser (seeds + 60s)
         run: go test ./internal/baseline -run FuzzLoad -fuzz FuzzLoad -fuzztime 60s
-        continue-on-error: true # fuzzing is best-effort in CI; failures still visible
       - name: Coverage gate (85%)
         shell: bash
         run: |
