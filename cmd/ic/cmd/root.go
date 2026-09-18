@@ -20,11 +20,15 @@ var errChangesFound = fmt.Errorf("changes found")
 
 var cfgPath string
 
+// Version is set at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 // NewRootCommand builds the full command tree.
 func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "integrity-check",
 		Short:         "Detect tampering in files against an HMAC-signed baseline",
+		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

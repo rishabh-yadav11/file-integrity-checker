@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (race) - ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          check-latest: true
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Format check
+        run: test -z "$(gofmt -l .)"
+      - name: Unit tests with race detector
+        run: go test -race ./... -timeout 10m
+      - name: Fuzz baseline parser (seeds + 60s)
+        run: go test ./internal/baseline -run FuzzLoad -fuzz FuzzLoad -fuzztime 60s
+        continue-on-error: true # fuzzing is best-effort in CI; failures still visible
+      - name: Coverage gate (85%)
+        shell: bash
+        run: |
+          go test ./... -coverprofile=coverage.out -timeout 10m
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3+0}')
+          echo "total coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { if (t < 85.0) { print "coverage below 85%: " t; exit 1 } }'
+
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - name: Fuzz seed regression (no -fuzz flag)
+        run: go test ./internal/baseline -run FuzzLoad -count=1
