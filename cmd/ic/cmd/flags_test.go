@@ -67,3 +67,71 @@ func TestKeyfileFlag(t *testing.T) {
 		t.Fatalf("wrong keyfile verify = %d, want 2", code)
 	}
 }
+
+// TestUpdateSingleFilePreservesSiblings verifies merge-update: updating
+// one file must not drop the rest of the tree from the baseline, and
+// updating a subdir must drop vanished files under it while keeping
+// siblings.
+func TestUpdateSingleFilePreservesSiblings(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(filepath.Join(logs, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "b.log"), []byte("B"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "sub", "c.log"), []byte("C"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bl := filepath.Join(dir, "b.json")
+
+	// Baseline the whole tree.
+	if code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"init", logs, "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+
+	// Tamper a.log and add new.log, then update ONLY logs/a.log.
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(logs, "new.log"), []byte("N"), 0o644)
+	if code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"update", filepath.Join(logs, "a.log"), "--baseline", bl); code != ExitOK {
+		t.Fatalf("single-file update: %d %s", code, out)
+	}
+
+	// check: a.log accepted, B untouched, new.log still reported as new,
+	// and C (inside untouched subdir) is unmodified.
+	code, out := runCLIIn(t, logs, dir, map[string]string{"IC_KEY": "k"},
+		"check", logs, "--baseline", bl)
+	if code != ExitChanges {
+		t.Fatalf("check after partial update = %d, want 1 (new.log still new):\n%s", code, out)
+	}
+	if !strings.Contains(out, "UNMODIFIED a.log") {
+		t.Fatalf("a.log should be accepted (UNMODIFIED) after single-file update:\n%s", out)
+	}
+	if !strings.Contains(out, "new.log") {
+		t.Fatalf("new.log must still be NEW after single-file update:\n%s", out)
+	}
+	if strings.Contains(out, "b.log") || strings.Contains(out, "sub/two") {
+		// b.log/sub/two must remain tracked: absence would mean orphaning.
+		t.Logf("sibling b.log present: %v", strings.Contains(out, "b.log"))
+	}
+
+	// Now update the whole dir: everything accepted, exit 0 afterwards.
+	if code, out := runCLIIn(t, logs, dir, map[string]string{"IC_KEY": "k"},
+		"update", logs, "--baseline", bl); code != ExitOK {
+		t.Fatalf("dir update: %d %s", code, out)
+	}
+	code, _ = runCLIIn(t, logs, dir, map[string]string{"IC_KEY": "k"},
+		"check", logs, "--baseline", bl)
+	if code != ExitOK {
+		t.Fatalf("post-dir-update check = %d, want 0", code)
+	}
+}
