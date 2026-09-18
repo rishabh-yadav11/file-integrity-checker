@@ -61,6 +61,14 @@ func newCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Default --algo to the baseline's own algorithm: the hashes
+			// are already labeled there, so requiring a repeat of --algo
+			// on every check of a non-sha256 baseline is a footgun. An
+			// explicitly set --algo still overrides and the mismatch
+			// guard in walk.Compare still rejects wrong requests.
+			if f := c.Flags().Lookup("algo"); f == nil || !f.Changed {
+				r.algo = base.Algorithm
+			}
 			results, err := walk.Compare(args[0], base, r.scanOpts())
 			if err != nil {
 				return err

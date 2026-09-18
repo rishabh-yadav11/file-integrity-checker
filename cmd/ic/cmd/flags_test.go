@@ -160,3 +160,34 @@ func TestCheckOtherRootDeterministic(t *testing.T) {
 		t.Fatalf("cross-root check = %d, want 1 (everything foreign):\n%s", code, out)
 	}
 }
+
+// TestCheckFollowsBaselineAlgo verifies check without --algo uses the
+// baseline's stored algorithm (blake2b here) instead of erroring with a
+// sha256 mismatch, and an explicit wrong --algo still fails loudly.
+func TestCheckFollowsBaselineAlgo(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"init", logs, "--baseline", bl, "--algo", "blake2b"); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	// clean check without --algo must follow baseline algo and exit 0.
+	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"check", logs, "--baseline", bl)
+	if code != ExitOK || !contains(out, "unmodified") {
+		t.Fatalf("clean blake2b check without --algo: %d\n%s", code, out)
+	}
+	// explicit wrong algo still rejected.
+	code, _ = runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"check", logs, "--baseline", bl, "--algo", "sha256")
+	if code != ExitError {
+		t.Fatalf("explicit algo mismatch = %d, want 2", code)
+	}
+}
