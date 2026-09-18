@@ -14,8 +14,6 @@ import (
 
 // newWatchCmd builds the watch subcommand (fsnotify, alert webhook).
 func newWatchCmd() *cobra.Command {
-	var algoFlag, format string
-	var webhook string
 	var debounce time.Duration
 	cmd := &cobra.Command{
 		Use:   "watch <path>",
@@ -32,7 +30,7 @@ func newWatchCmd() *cobra.Command {
 			}
 			url := r.cfg.WebhookURL
 			if f := c.Flags().Lookup("webhook"); f != nil && f.Changed {
-				url = webhook
+				url, _ = c.Flags().GetString("webhook")
 			}
 			wcfg := watch.Config{
 				Root:       args[0],
@@ -48,9 +46,6 @@ func newWatchCmd() *cobra.Command {
 			return watch.Run(cmdCtx(), wcfg)
 		},
 	}
-	addAlgoFlag(cmd, &algoFlag)
-	addFormatFlag(cmd, &format)
-	cmd.Flags().StringVar(&webhook, "webhook", "", "webhook URL for tamper alerts")
 	cmd.Flags().DurationVar(&debounce, "debounce", 500*time.Millisecond, "debounce window for fs events")
 	return cmd
 }

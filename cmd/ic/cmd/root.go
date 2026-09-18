@@ -29,6 +29,16 @@ func NewRootCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config file (default $HOME/.config/integrity-check/config.yaml)")
+	root.PersistentFlags().String("baseline", "", "baseline file path")
+	root.PersistentFlags().String("algo", "", "hash algorithm: sha256|sha512|blake2b")
+	root.PersistentFlags().String("format", "", "output format: text|json")
+	root.PersistentFlags().Bool("color", false, "colorize output")
+	root.PersistentFlags().BoolP("quiet", "q", false, "hide unmodified lines")
+	root.PersistentFlags().Int("workers", 0, "hashing worker count (0 = NumCPU)")
+	root.PersistentFlags().String("keyfile", "", "HMAC key file (else IC_KEY env)")
+	root.PersistentFlags().String("webhook", "", "webhook URL for tamper alerts")
+	root.PersistentFlags().StringArray("include", nil, "include globs")
+	root.PersistentFlags().StringArray("exclude", nil, "exclude globs")
 	root.AddCommand(newInitCmd(), newCheckCmd(), newUpdateCmd(), newWatchCmd(), newVerifyBaselineCmd())
 	return root
 }

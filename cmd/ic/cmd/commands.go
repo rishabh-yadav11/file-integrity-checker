@@ -14,7 +14,6 @@ import (
 )
 
 func newInitCmd() *cobra.Command {
-	var algoFlag, format string
 	cmd := &cobra.Command{
 		Use:   "init <path>",
 		Short: "Create the baseline for a file or directory",
@@ -43,13 +42,10 @@ func newInitCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addAlgoFlag(cmd, &algoFlag)
-	addFormatFlag(cmd, &format)
 	return cmd
 }
 
 func newCheckCmd() *cobra.Command {
-	var algoFlag, format string
 
 	cmd := &cobra.Command{
 		Use:   "check <path>",
@@ -86,15 +82,10 @@ func newCheckCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addAlgoFlag(cmd, &algoFlag)
-	addFormatFlag(cmd, &format)
-	cmd.Flags().Bool("color", isatty(), "colorize output")
-	cmd.Flags().BoolP("quiet", "q", false, "hide unmodified lines")
 	return cmd
 }
 
 func newUpdateCmd() *cobra.Command {
-	var algoFlag, format string
 	cmd := &cobra.Command{
 		Use:   "update <path>",
 		Short: "Accept current state into the baseline (file or dir)",
@@ -123,8 +114,6 @@ func newUpdateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addAlgoFlag(cmd, &algoFlag)
-	addFormatFlag(cmd, &format)
 	return cmd
 }
 
