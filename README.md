@@ -92,10 +92,12 @@ workers: 8
 format: text
 exclude: ["*.tmp", "cache/"]
 webhook_url: https://alerts.example.internal/hook
+key_file: /etc/integrity-check/hmac.key
 ```
 
 Command-line flags override the config file; the HMAC key comes from
-`IC_KEY` or `--keyfile` and is never stored in the baseline.
+`IC_KEY` or `--keyfile` (config `key_file:` works too) and is never
+stored in the baseline.
 
 ## Threat model
 
