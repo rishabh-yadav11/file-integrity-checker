@@ -151,3 +151,40 @@ func TestDiffReasons(t *testing.T) {
 		})
 	}
 }
+
+// TestCompareRespectsExcludeForBaseline verifies that a baseline entry
+// matched by --exclude is out of the requested view, not "missing".
+func TestCompareRespectsExcludeForBaseline(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Entries: mustScan(t, root, opts)}
+	// The baseline contains skipme/secret.log; exclude it and delete it.
+	if err := os.Remove(filepath.Join(root, "skipme", "secret.log")); err != nil {
+		t.Fatal(err)
+	}
+	filtered := Options{Algo: model.AlgoSHA256, Exclude: []string{"skipme/**"}}
+	results, err := Compare(root, base, filtered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Path == "skipme/secret.log" {
+			t.Fatalf("excluded baseline entry reported as %s", r.Kind)
+		}
+	}
+	// Without the filter it must still be reported missing.
+	results, err = Compare(root, base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range results {
+		if r.Path == "skipme/secret.log" && r.Kind == model.KindMissing {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("missing report lost when no exclude is set")
+	}
+}

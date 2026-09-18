@@ -42,6 +42,13 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 	}
 	for _, e := range base.Entries {
 		if _, ok := currentByPath[e.Path]; !ok {
+			// Respect the same include/exclude filters as the scan:
+			// a baseline entry outside the requested view is out of
+			// scope, not missing. (E.g. `check --exclude cache/**`
+			// must not flag cached files as missing.)
+			if opts.Skip(e.Path, false) {
+				continue
+			}
 			out = append(out, model.Result{Path: e.Path, Kind: model.KindMissing})
 		}
 	}
