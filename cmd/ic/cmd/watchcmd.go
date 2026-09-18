@@ -36,8 +36,6 @@ func newWatchCmd() *cobra.Command {
 				Root:       args[0],
 				ScanOpts:   r.scanOpts(),
 				Baseline:   base,
-				Store:      r.store,
-				BaselinePk: r.cfg.Baseline,
 				WebhookURL: url,
 				Debounce:   debounce,
 				Out:        stdout(),

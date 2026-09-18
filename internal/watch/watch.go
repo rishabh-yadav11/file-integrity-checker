@@ -19,7 +19,6 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/rishabh-yadav11/file-integrity-checker/internal/baseline"
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/hash"
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/model"
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/walk"
@@ -30,8 +29,6 @@ type Config struct {
 	Root       string
 	ScanOpts   walk.Options
 	Baseline   model.Baseline
-	Store      *baseline.Store
-	BaselinePk string // baseline path for atomic refresh on --update-style consent
 	WebhookURL string
 	Debounce   time.Duration
 	Out        interface{ Write([]byte) (int, error) }
