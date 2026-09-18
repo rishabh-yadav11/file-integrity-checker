@@ -222,3 +222,41 @@ func TestQuietSuppressesCleanSummary(t *testing.T) {
 		t.Fatalf("quiet tamper: %d\n%s", code, out)
 	}
 }
+
+// TestUpdateRefusesAlgoSwitch verifies update refuses to write hashes of
+// a different algorithm into an existing baseline: a partial update with
+// a mismatched --algo would mix sha256 and blake2b hashes under one
+// top-level label and make every later check false-positive.
+func TestUpdateRefusesAlgoSwitch(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"a.log", "b.log"} {
+		if err := os.WriteFile(filepath.Join(logs, f), []byte(f), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", "b.json"); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"update", "logs/a.log", "--baseline", "b.json", "--algo", "blake2b")
+	if code != ExitError || !strings.Contains(out, "refusing to write") {
+		t.Fatalf("mixed-algo update = %d\n%s", code, out)
+	}
+	// Matching algo still updates fine.
+	code, out = runCLIIn(t, dir, dir, env, "update", "logs/a.log", "--baseline", "b.json")
+	if code != ExitOK {
+		t.Fatalf("same-algo update: %d %s", code, out)
+	}
+	if code, out = runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"check", "logs", "--baseline", "b.json", "-q"); code != ExitOK {
+		t.Fatalf("post-update check = %d:\n%s", code, out)
+	}
+}

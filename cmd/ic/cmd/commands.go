@@ -108,16 +108,24 @@ func newUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			entries, err := r.scan(args[0])
-			if err != nil {
-				return err
-			}
 			// Merge-update: accept current state of <path> without
 			// orphaning the rest of the tree. Fresh entries rebase onto
 			// the baseline root, replace any baseline entries under the
 			// updated path (including ones that vanished), and leave all
 			// other baseline entries untouched.
 			base, err := r.store.Load(r.cfg.Baseline)
+			if err != nil {
+				return err
+			}
+			// A baseline must hold one consistent algorithm. A partial
+			// update with a different --algo would store new hashes in
+			// one algorithm, leave untouched entries under the old one,
+			// and flip the top-level label: every later check would
+			// false-positive on the untouched files. Refuse instead.
+			if r.algo != base.Algorithm {
+				return fmt.Errorf("update: baseline uses %s; refusing to write %s hashes into it (re-init with --algo %s to switch algorithms)", base.Algorithm, r.algo, r.algo)
+			}
+			entries, err := r.scan(args[0])
 			if err != nil {
 				return err
 			}
