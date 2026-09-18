@@ -77,6 +77,7 @@ $ integrity-check check logs/ --baseline b.json --format json
 | `--baseline <path>` | baseline file (required unless set in config) |
 | `--algo <name>` | `sha256` (default), `sha512`, `blake2b`; `check` defaults to the baseline's stored algorithm when omitted, an explicit different value fails the run |
 | `--format text|json` | output format |
+| `-q` / `--quiet` | hide unmodified lines; on a clean tree print nothing at all (CI/cron friendly, exit code still 0/1/2) |
 | `--include` / `--exclude` | glob filters, repeatable |
 | `--workers N` | hashing workers (0 = NumCPU) |
 | `--keyfile <path>` | HMAC key file (else `IC_KEY` env) |

@@ -191,3 +191,34 @@ func TestCheckFollowsBaselineAlgo(t *testing.T) {
 		t.Fatalf("explicit algo mismatch = %d, want 2", code)
 	}
 }
+
+// TestQuietSuppressesCleanSummary verifies `-q` prints nothing at all
+// on a clean tree (CI/cron friendly) while still printing the modified
+// lines and summary when changes exist.
+func TestQuietSuppressesCleanSummary(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	if code, _ := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", "b.json"); code != ExitOK {
+		t.Fatalf("init: %d", code)
+	}
+	// Clean: quiet must print nothing at all.
+	code, out := runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", "b.json", "-q")
+	if code != ExitOK || out != "" {
+		t.Fatalf("quiet clean: %d %q, want exit 0 empty output", code, out)
+	}
+	// Tamper: change line + summary must still print.
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("tampered"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out = runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", "b.json", "-q")
+	if code != ExitChanges || !contains(out, "MODIFIED") || !contains(out, "summary") {
+		t.Fatalf("quiet tamper: %d\n%s", code, out)
+	}
+}

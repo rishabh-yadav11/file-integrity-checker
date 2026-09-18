@@ -82,7 +82,11 @@ func newCheckCmd() *cobra.Command {
 				return err
 			}
 			s := report.Count(results)
-			if r.cfg.Format != "json" {
+			// Quiet mode (like AIDE -q) is for CI/cron: silence the
+			// per-file Unmodified lines (report) and the trailing
+			// summary on a clean tree. Changes always print so the
+			// operator sees what moved, and the exit code still works.
+			if r.cfg.Format != "json" && (!r.cfg.Quiet || s.Changed()) {
 				_, _ = fmt.Fprintln(stdout(), s.Text())
 			}
 			if s.Changed() {
