@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,6 +205,14 @@ func newVerifyBaselineCmd() *cobra.Command {
 			}
 			if _, err := r.store.Load(r.cfg.Baseline); err != nil {
 				return err
+			}
+			// Perms 0600 are part of the contract (goal: baseline 0600).
+			// A group/world-readable baseline leaks its contents and
+			// structure; warn loudly but keep the verdict accurate.
+			if fi, err := os.Stat(r.cfg.Baseline); err == nil && fi.Mode().Perm()&0o077 != 0 {
+				r.log.Warn("baseline file is group/world readable; store it 0600",
+					slog.String("path", r.cfg.Baseline),
+					slog.String("mode", fmt.Sprintf("%04o", fi.Mode().Perm())))
 			}
 			_, _ = fmt.Fprintln(stdout(), "baseline OK")
 			return nil
