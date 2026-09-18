@@ -140,6 +140,8 @@ before the attacker had access.
 1. Generate the key once (`IC_KEY` env or `--keyfile`, file perms 0600).
 2. `init` the baseline immediately after a known-good state, then move
    the baseline file (and key) somewhere the monitored host cannot write.
+   Do not store the baseline inside the tree it describes; init warns if
+   you do (every save changes the baseline, so every check would flag it).
 3. Schedule `check` (cron/systemd timer) and alert on exit code 1 or 2.
 4. Treat `verify-baseline` failures as incidents: the baseline was
    altered or you are using the wrong key.
