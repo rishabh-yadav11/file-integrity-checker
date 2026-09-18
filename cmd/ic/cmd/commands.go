@@ -40,6 +40,16 @@ func newInitCmd() *cobra.Command {
 			if err := r.store.Save(r.cfg.Baseline, b); err != nil {
 				return err
 			}
+			// A baseline stored inside the tree it describes is
+			// self-referential: every Save changes it, so every later
+			// check flags it as modified. Warn so the operator notices
+			// before building automation on a perpetually-failing check.
+			absBase, _ := filepath.Abs(r.cfg.Baseline)
+			if rel, err := filepath.Rel(abs, absBase); err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
+				r.log.Warn("baseline is inside the watched tree; it will be re-baselined and flagged as modified on every run - store it outside the tree",
+					slog.String("baseline", r.cfg.Baseline),
+					slog.String("root", abs))
+			}
 			_, _ = fmt.Fprintf(os.Stdout, "baseline written: %s (%d files, %s)\n", r.cfg.Baseline, len(entries), r.algo)
 			return nil
 		},

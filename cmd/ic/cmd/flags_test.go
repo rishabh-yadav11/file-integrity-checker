@@ -293,3 +293,29 @@ func TestVerifyBaselineWarnsOnLoosePerms(t *testing.T) {
 		t.Fatalf("unexpected perms warning for 0600 baseline: %s", out)
 	}
 }
+
+// TestInitWarnsBaselineInsideTree verifies init warns when the baseline
+// is stored inside the tree it describes (self-referential setup).
+func TestInitWarnsBaselineInsideTree(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", "logs/b.json")
+	if code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if !contains(out, "baseline is inside the watched tree") {
+		t.Fatalf("expected inside-tree warning, got: %s", out)
+	}
+	// Baseline outside the tree: no warning.
+	code, out = runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", "outside.json")
+	if code != ExitOK || contains(out, "baseline is inside the watched tree") {
+		t.Fatalf("unexpected warning for outside baseline: %d %s", code, out)
+	}
+}
