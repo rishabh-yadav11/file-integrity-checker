@@ -201,10 +201,13 @@ func StatEntry(absPath, relPath string) (*model.Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	uid, gid := ownership(info)
 	return &model.Entry{
 		Path:  relPath,
 		Size:  info.Size(),
 		Mode:  uint32(info.Mode().Perm()),
+		UID:   uid,
+		GID:   gid,
 		Mtime: info.ModTime(),
 	}, nil
 }
