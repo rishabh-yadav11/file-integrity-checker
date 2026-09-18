@@ -218,10 +218,10 @@ func mustRel(root, path string) string {
 
 // handleEvent re-hashes one path and reports any change vs baseline.
 func handleEvent(ctx context.Context, cfg Config, path string) {
-	rel, err := filepath.Rel(cfg.Root, path)
-	if err != nil {
-		return
+	if err := ctx.Err(); err != nil {
+		return // shutting down: skip pending work
 	}
+	rel, err := filepath.Rel(cfg.Root, path)
 	// Rotated logs: the old name vanished => report as missing only if
 	// it was in the baseline; the new file is reported as new.
 	if _, err := os.Lstat(path); err != nil {
