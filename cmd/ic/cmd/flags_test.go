@@ -135,3 +135,28 @@ func TestUpdateSingleFilePreservesSiblings(t *testing.T) {
 		t.Fatalf("post-dir-update check = %d, want 0", code)
 	}
 }
+
+// TestCheckOtherRootDeterministic verifies check against a path that is
+// not the baseline's root still works (exit 1, files reported as
+// foreign) instead of crashing or silently passing.
+func TestCheckOtherRootDeterministic(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"init", logs, "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	// check against a DIFFERENT directory (dir itself): entry paths cannot match.
+	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"check", dir, "--baseline", bl)
+	if code != ExitChanges {
+		t.Fatalf("cross-root check = %d, want 1 (everything foreign):\n%s", code, out)
+	}
+}
