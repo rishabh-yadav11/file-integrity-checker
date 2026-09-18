@@ -126,11 +126,19 @@ func loadRuntime(cmd *cobra.Command) (*runtime, error) {
 }
 
 // resolveKey reads the HMAC key: env IC_KEY first, then keyfile.
+// A group/world-readable keyfile leaks the signing secret to every local
+// account; warn loudly but keep working (the file may be deliberately
+// provisioned that way by the operator).
 func resolveKey(cfg config.Config) ([]byte, error) {
 	if env := os.Getenv("IC_KEY"); env != "" {
 		return []byte(env), nil
 	}
 	if cfg.KeyFile != "" {
+		if fi, err := os.Stat(cfg.KeyFile); err == nil && fi.Mode().Perm()&0o077 != 0 {
+			slog.Warn("keyfile is group/world readable; store it 0600",
+				slog.String("path", cfg.KeyFile),
+				slog.String("mode", fmt.Sprintf("%04o", fi.Mode().Perm())))
+		}
 		b, err := os.ReadFile(cfg.KeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("read keyfile: %w", err)
