@@ -9,10 +9,11 @@ mtime), then detects any drift from that baseline.
 
 - **Commands**: `init`, `check`, `update`, `watch`, `verify-baseline`
 - **Algorithms**: SHA-256 (default), SHA-512, BLAKE2b via `--algo`
-- **Metadata tracking**: size, mode, mtime are compared alongside the digest
-- **Recursive scan** with `--include` / `--exclude` globs; symlinks are never followed or hashed
+- **Metadata tracking**: size, mode, owner (uid/gid on Unix), mtime compared alongside the digest
+- **Recursive scan** with `--include` / `--exclude` globs; symlinks are never followed or hashed, and a symlink swapped in where a regular file was baselined is flagged (op `symlink`)
+- **File or directory paths**: `init`, `check`, and `update` all accept a single file as well as a directory
 - **Bounded worker pool** and chunked reads: large files hash in constant memory
-- **Signed baseline**: JSON, written atomically (temp file + rename), perms 0600, HMAC-SHA256 signed
+- **Signed baseline**: JSON, written atomically (temp file + rename), perms 0600, HMAC-SHA256 signed; one algorithm per baseline (update refuses to mix)
 - **`verify-baseline`** confirms the baseline file itself was not tampered with
 - **Real-time watch mode** (fsnotify) with debouncing and optional webhook alerts
 - **Output**: colored text or `--format json`; exit code 0 clean, 1 changes, 2 error
