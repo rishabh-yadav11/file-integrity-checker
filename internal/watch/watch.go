@@ -66,6 +66,13 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	defer watcher.Close()
 
+	// Root must exist: fail fast rather than silently watching nothing.
+	if fi, err := os.Stat(cfg.Root); err != nil {
+		return fmt.Errorf("watch: stat %s: %w", cfg.Root, err)
+	} else if !fi.IsDir() {
+		return fmt.Errorf("watch: %s is not a directory", cfg.Root)
+	}
+
 	// Watch the root recursively (dirs only, skip excluded).
 	if err := watchRecursive(watcher, cfg.Root, cfg.ScanOpts); err != nil {
 		return err
@@ -234,8 +241,14 @@ func handleEvent(ctx context.Context, cfg Config, path string) {
 	}
 }
 
-// emit prints and optionally webhooks an event.
+// trapSink allows tests to capture events; nil in production.
+var trapSink func(Event)
+
+// emit logs, traps (tests), and optionally webhooks an event.
 func emit(cfg Config, ev Event) {
+	if trapSink != nil {
+		trapSink(ev)
+	}
 	cfg.Log.Warn("tamper event", slog.String("path", ev.Path), slog.String("op", ev.Op), slog.String("kind", string(ev.Kind)))
 	if cfg.WebhookURL != "" {
 		go postWebhook(cfg.WebhookURL, ev)
