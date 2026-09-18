@@ -205,6 +205,16 @@ func scanSingle(abs, root string, opts walk.Options) ([]model.Entry, error) {
 	return entries, nil
 }
 
+// baseEntry looks up a baseline entry by slash-separated relative path.
+func baseEntry(b model.Baseline, rel string) (model.Entry, bool) {
+	for _, e := range b.Entries {
+		if e.Path == rel {
+			return e, true
+		}
+	}
+	return model.Entry{}, false
+}
+
 func mustRel(root, path string) string {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -229,6 +239,20 @@ func handleEvent(ctx context.Context, cfg Config, path string) {
 					Time: time.Now(), Details: "file disappeared while watched"})
 				break
 			}
+		}
+		return
+	}
+	// Symlink swap: hashing through the link would silently hash the
+	// target file and report a mere content change. Baselines never
+	// contain symlinks (walk skips them), so treat this as a tamper of
+	// the original entry instead of following the link.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if old, ok := baseEntry(cfg.Baseline, filepath.ToSlash(rel)); ok {
+			emit(cfg, Event{Path: old.Path, Op: "symlink", Kind: model.KindModified,
+				Time: time.Now(), Details: "path changed from regular file to symlink"})
+		} else {
+			emit(cfg, Event{Path: filepath.ToSlash(rel), Op: "symlink", Kind: model.KindNew,
+				Time: time.Now(), Details: "symlink created under watched root"})
 		}
 		return
 	}
