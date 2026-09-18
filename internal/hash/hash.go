@@ -35,9 +35,13 @@ func newHasher(algo model.Algorithm) (hash.Hash, error) {
 	}
 }
 
-// FileHashes the contents of path using algo, reading in fixed-size
-// chunks so arbitrarily large files hash in bounded memory.
+// File hashes the contents of path using algo, reading in fixed-size
+// chunks so arbitrarily large files hash in bounded memory. Directories
+// are rejected up front: reading a directory as an io.Reader blocks.
 func File(path string, algo model.Algorithm) (string, error) {
+	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+		return "", fmt.Errorf("cannot hash directory %s", path)
+	}
 	h, err := newHasher(algo)
 	if err != nil {
 		return "", err

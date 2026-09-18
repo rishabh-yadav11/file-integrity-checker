@@ -175,6 +175,8 @@ func excludedDir(opts walk.Options, rel string) bool {
 }
 
 // scanSingle hashes one file relative to root (helper for handleEvent).
+// It always drains the pool fully (results + errors + Wait) so a failing
+// job can never leave the caller ranging an unclosed channel.
 func scanSingle(abs, root string, opts walk.Options) ([]model.Entry, error) {
 	e, err := walk.StatEntry(abs, filepath.ToSlash(mustRel(root, abs)))
 	if err != nil {
@@ -184,10 +186,26 @@ func scanSingle(abs, root string, opts walk.Options) ([]model.Entry, error) {
 	pool.Start(opts.Algo)
 	pool.Submit(hash.Job{Path: abs, Entry: e})
 	pool.Close()
-	for out := range pool.Results() {
-		return []model.Entry{*out}, nil
+
+	var (
+		first   error
+		entries []model.Entry
+	)
+	// Wait first: it closes both channels once workers finish, so the
+	// range loops below are guaranteed to terminate.
+	pool.Wait()
+	for err := range pool.Errors() {
+		if first == nil {
+			first = err
+		}
 	}
-	return nil, fmt.Errorf("hash failed for %s", abs)
+	for res := range pool.Results() {
+		entries = append(entries, *res)
+	}
+	if first != nil {
+		return nil, first
+	}
+	return entries, nil
 }
 
 func mustRel(root, path string) string {
