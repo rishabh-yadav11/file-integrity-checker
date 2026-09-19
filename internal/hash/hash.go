@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"os"
 	"runtime"
 	"sync"
 
@@ -51,7 +50,10 @@ func FileBuffer(path string, algo model.Algorithm, chunk []byte) (string, error)
 	if err != nil {
 		return "", err
 	}
-	f, err := os.Open(path)
+	// O_NOFOLLOW + fstat of the open descriptor closes the Lstat-then-Open
+	// TOCTOU window: the file hashed is the one we verified, not whatever
+	// a concurrent process swapped in as a symlink.
+	f, err := openNoFollow(path)
 	if err != nil {
 		return "", err
 	}
@@ -60,8 +62,8 @@ func FileBuffer(path string, algo model.Algorithm, chunk []byte) (string, error)
 	if err != nil {
 		return "", err
 	}
-	if fi.IsDir() {
-		return "", fmt.Errorf("cannot hash directory %s", path)
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("cannot hash non-regular file %s (type %v)", path, fi.Mode())
 	}
 	if _, err := io.CopyBuffer(h, f, chunk); err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)

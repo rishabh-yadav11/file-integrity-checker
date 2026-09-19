@@ -205,12 +205,17 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 				return nil
 			}
 			if opts.FollowSymlinks {
-				if fi, statErr := os.Stat(path); statErr == nil && fi.Mode().IsRegular() {
-					if opts.Skip(relSlash, false) {
+				// Resolve the link to its real target and hash that
+				// (hashing never follows links itself). Target must be
+				// a regular file; otherwise record the link only.
+				if real, realErr := filepath.EvalSymlinks(path); realErr == nil {
+					if fi, statErr := os.Stat(real); statErr == nil && fi.Mode().IsRegular() {
+						if opts.Skip(relSlash, false) {
+							return nil
+						}
+						pool.Submit(hash.Job{Path: real, Entry: link})
 						return nil
 					}
-					pool.Submit(hash.Job{Path: path, Entry: link})
-					return nil
 				}
 			}
 			if opts.Skip(relSlash, false) {
