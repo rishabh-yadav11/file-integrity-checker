@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -65,7 +66,15 @@ func newInitCmd() *cobra.Command {
 					slog.String("baseline", r.cfg.Baseline),
 					slog.String("root", abs))
 			}
-			_, _ = fmt.Fprintf(os.Stdout, "baseline written: %s (%d files, %s)\n", r.cfg.Baseline, len(entries), r.algo)
+			if r.cfg.Format == "json" {
+				_ = json.NewEncoder(stdout()).Encode(map[string]any{
+					"baseline":  r.cfg.Baseline,
+					"files":     len(entries),
+					"algorithm": string(r.algo),
+				})
+			} else {
+				_, _ = fmt.Fprintf(stdout(), "baseline written: %s (%d files, %s)\n", r.cfg.Baseline, len(entries), r.algo)
+			}
 			return nil
 		},
 	}

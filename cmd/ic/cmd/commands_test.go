@@ -256,6 +256,32 @@ func TestInitSingleFileSymlinkNoFollow(t *testing.T) {
 	}
 }
 
+// TestInitFormatJSON verifies init honors --format json with a JSON
+// summary instead of the human-readable line.
+func TestInitFormatJSON(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+	code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl, "--format", "json")
+	if code != ExitOK {
+		t.Fatalf("init --format json: %d %s", code, out)
+	}
+	if !strings.Contains(out, `"baseline"`) || !strings.Contains(out, `"files"`) || !strings.Contains(out, `"algorithm"`) {
+		t.Fatalf("json init output missing fields: %s", out)
+	}
+	if strings.Contains(out, "baseline written:") {
+		t.Fatalf("json init must not print the text summary: %s", out)
+	}
+}
+
 func TestCheckTamperExitOne(t *testing.T) {
 	// not parallel: t.Setenv/Chdir in harness
 	dir := t.TempDir()
