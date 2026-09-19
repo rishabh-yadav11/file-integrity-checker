@@ -76,19 +76,19 @@ func Load(path string, required bool) (Config, error) {
 
 // FlagOverrides carries only flags the user actually set.
 type FlagOverrides struct {
-	Baseline  *string
-	Algorithm *string
-	Format    *string
-	Color     *bool
-	Quiet     *bool
-	Workers   *int
-	KeyFile   *string
-	Webhook   *string
-	FollowSymlinks *bool
+	Baseline          *string
+	Algorithm         *string
+	Format            *string
+	Color             *bool
+	Quiet             *bool
+	Workers           *int
+	KeyFile           *string
+	Webhook           *string
+	FollowSymlinks    *bool
 	AllowLooseKeyfile *bool
-	IgnoreMtime *bool
-	Include   []string // appended to file values
-	Exclude   []string
+	IgnoreMtime       *bool
+	Include           []string // appended to file values
+	Exclude           []string
 }
 
 // Apply merges non-nil overrides onto cfg.

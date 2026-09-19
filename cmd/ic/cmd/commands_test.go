@@ -288,10 +288,10 @@ func TestInitFormatJSON(t *testing.T) {
 func TestArgErrorConciseNoUsage(t *testing.T) {
 	// not parallel: t.Setenv/Chdir in harness
 	cases := [][]string{
-		{"init", "a", "b"},        // too many args
-		{"init"},                  // missing arg
-		{"check", "--zzz", "x"},   // unknown flag
-		{"bogus-command"},         // unknown command
+		{"init", "a", "b"},      // too many args
+		{"init"},                // missing arg
+		{"check", "--zzz", "x"}, // unknown flag
+		{"bogus-command"},       // unknown command
 	}
 	for _, args := range cases {
 		code, out := runCLIIn(t, t.TempDir(), t.TempDir(), map[string]string{"IC_KEY": "k"}, args...)
