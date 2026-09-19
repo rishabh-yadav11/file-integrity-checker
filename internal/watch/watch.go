@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/hash"
@@ -152,29 +151,11 @@ func watchRecursive(w *fsnotify.Watcher, root string, opts walk.Options) error {
 			return nil
 		}
 		rel, err := filepath.Rel(root, p)
-		if err == nil && rel != "." && opts.Exclude != nil && excludedDir(opts, filepath.ToSlash(rel)) {
+		if err == nil && rel != "." && opts.ExcludedDir(filepath.ToSlash(rel)) {
 			return filepath.SkipDir
 		}
 		return w.Add(p)
 	})
-}
-
-// excludedDir reports whether a directory path is covered by exclude globs
-// (mirrors walk's pruning rules without importing unexported helpers).
-func excludedDir(opts walk.Options, rel string) bool {
-	for _, pat := range opts.Exclude {
-		if ok, _ := doublestar.Match(pat, rel); ok {
-			return true
-		}
-		if !strings.Contains(pat, "/") {
-			for _, seg := range strings.Split(rel, "/") {
-				if ok, _ := doublestar.Match(pat, seg); ok {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 // scanSingle hashes one file relative to root (helper for handleEvent).

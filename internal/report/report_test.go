@@ -17,6 +17,26 @@ func sampleResults() []model.Result {
 	}
 }
 
+// TestRenderDoesNotMutateInput verifies Render sorts a copy and leaves the
+// caller's slice order untouched.
+func TestRenderDoesNotMutateInput(t *testing.T) {
+	t.Parallel()
+	in := []model.Result{{Path: "z.log"}, {Path: "a.log"}, {Path: "m.log"}}
+	before := append([]model.Result{}, in...)
+	if err := Render(discardWriter{}, in, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range in {
+		if in[i].Path != before[i].Path {
+			t.Fatalf("Render mutated the caller slice: got %q at %d, want %q", in[i].Path, i, before[i].Path)
+		}
+	}
+}
+
+type discardWriter struct{}
+
+func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
 func TestCount(t *testing.T) {
 	t.Parallel()
 	s := Count(sampleResults())

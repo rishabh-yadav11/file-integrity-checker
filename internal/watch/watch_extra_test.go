@@ -28,8 +28,8 @@ func TestExcludedDir(t *testing.T) {
 		{walk.Options{}, "anything", false},
 	}
 	for i, tt := range tests {
-		if got := excludedDir(tt.opts, tt.rel); got != tt.want {
-			t.Errorf("case %d: excludedDir(%v) = %v, want %v", i, tt.rel, got, tt.want)
+		if got := tt.opts.ExcludedDir(tt.rel); got != tt.want {
+			t.Errorf("case %d: ExcludedDir(%v) = %v, want %v", i, tt.rel, got, tt.want)
 		}
 	}
 }

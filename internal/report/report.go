@@ -67,12 +67,15 @@ func (s Summary) Text() string {
 }
 
 // Render writes results to w in the configured format, sorted by path.
+// The caller's slice is never mutated (sorted on a copy).
 func Render(w io.Writer, results []model.Result, opts Options) error {
-	sort.Slice(results, func(i, j int) bool { return results[i].Path < results[j].Path })
+	sorted := make([]model.Result, len(results))
+	copy(sorted, results)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
 	if opts.Format == "json" {
-		return renderJSON(w, results)
+		return renderJSON(w, sorted)
 	}
-	return renderText(w, results, opts)
+	return renderText(w, sorted, opts)
 }
 
 func renderJSON(w io.Writer, results []model.Result) error {

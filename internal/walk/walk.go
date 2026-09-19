@@ -67,6 +67,13 @@ func (o Options) excluded(relPath string, isDir bool) bool {
 	return false
 }
 
+// ExcludedDir reports whether a directory path (slash-separated, relative
+// to root) is covered by Exclude globs. Shared with the watch package so
+// pruning rules do not drift between the scanner and the watcher.
+func (o Options) ExcludedDir(rel string) bool {
+	return o.excluded(rel, true)
+}
+
 // Skip reports whether relPath (slash-separated, relative to root) should
 // be omitted: either it matches Exclude, or Include patterns exist and
 // none match. Directories with Include set are only pruned when excluded;
