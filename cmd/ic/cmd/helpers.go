@@ -172,28 +172,14 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		pool := hash.NewPool(r.cfg.Workers)
-		pool.Start(r.algo)
-		pool.Submit(hash.Job{Path: abs, Entry: e})
-		pool.Close()
-		pool.Wait() // closes results/errors channels once workers finish
-		var first error
-		for err := range pool.Errors() {
-			if first == nil {
-				first = err
-			}
+		// One file: hash inline; a worker pool would start Workers
+		// goroutines to process a single job.
+		sum, err := hash.FileBuffer(abs, r.algo, make([]byte, 1<<20))
+		if err != nil {
+			return nil, err
 		}
-		if first != nil {
-			return nil, first
-		}
-		var out []model.Entry
-		for res := range pool.Results() {
-			out = append(out, *res)
-		}
-		if len(out) == 0 {
-			return nil, fmt.Errorf("hash failed for %s", path)
-		}
-		return out, nil
+		e.Hash = sum
+		return []model.Entry{*e}, nil
 	}
 	return walk.Scan(path, r.scanOpts())
 }

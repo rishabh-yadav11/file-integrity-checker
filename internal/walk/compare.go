@@ -63,23 +63,14 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 		if err != nil {
 			return nil, err
 		}
-		pool := hash.NewPool(opts.Workers)
-		pool.Start(opts.Algo)
-		pool.Submit(hash.Job{Path: abs, Entry: e})
-		pool.Close()
-		pool.Wait()
-		var firstErr error
-		for err := range pool.Errors() {
-			if firstErr == nil {
-				firstErr = err
-			}
+		// One file: hash inline; a worker pool would start Workers
+		// goroutines to process a single job.
+		sum, err := hash.FileBuffer(abs, opts.Algo, make([]byte, 1<<20))
+		if err != nil {
+			return nil, err
 		}
-		if firstErr != nil {
-			return nil, firstErr
-		}
-		for res := range pool.Results() {
-			current = append(current, *res)
-		}
+		e.Hash = sum
+		current = []model.Entry{*e}
 		singleFile = true
 	} else {
 		var err error

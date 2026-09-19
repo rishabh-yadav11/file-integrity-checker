@@ -176,37 +176,22 @@ func excludedDir(opts walk.Options, rel string) bool {
 }
 
 // scanSingle hashes one file relative to root (helper for handleEvent).
-// It always drains the pool fully (results + errors + Wait) so a failing
-// job can never leave the caller ranging an unclosed channel.
+// Hashing is inlined: one file does not need a worker pool, and this
+// runs on every debounced fs event.
 func scanSingle(abs, root string, opts walk.Options) ([]model.Entry, error) {
 	e, err := walk.StatEntry(abs, filepath.ToSlash(mustRel(root, abs)))
 	if err != nil {
 		return nil, err
 	}
-	pool := hash.NewPool(opts.Workers)
-	pool.Start(opts.Algo)
-	pool.Submit(hash.Job{Path: abs, Entry: e})
-	pool.Close()
-
-	var (
-		first   error
-		entries []model.Entry
-	)
-	// Wait first: it closes both channels once workers finish, so the
-	// range loops below are guaranteed to terminate.
-	pool.Wait()
-	for err := range pool.Errors() {
-		if first == nil {
-			first = err
-		}
+	// One file: hash inline instead of spinning up a full worker pool
+	// (the pool would launch Workers goroutines and three channels to
+	// process a single job, per debounced fs event).
+	sum, err := hash.FileBuffer(abs, opts.Algo, make([]byte, 1<<20))
+	if err != nil {
+		return nil, err
 	}
-	for res := range pool.Results() {
-		entries = append(entries, *res)
-	}
-	if first != nil {
-		return nil, first
-	}
-	return entries, nil
+	e.Hash = sum
+	return []model.Entry{*e}, nil
 }
 
 // baseIndex maps baseline entries by slash-separated relative path so
