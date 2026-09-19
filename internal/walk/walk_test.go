@@ -240,6 +240,25 @@ func TestScanFollowSymlinks(t *testing.T) {
 	}
 }
 
+// TestScanSetsEntryAlgorithm verifies hashed entries carry their
+// algorithm (previously the per-entry Algorithm field was never set).
+func TestScanSetsEntryAlgorithm(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	entries, err := Scan(root, Options{Algo: model.AlgoSHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.LinkTarget != "" {
+			continue // symlinks are recorded, not hashed
+		}
+		if e.Algorithm != model.AlgoSHA256 {
+			t.Errorf("entry %s algorithm = %q, want sha256", e.Path, e.Algorithm)
+		}
+	}
+}
+
 func TestSkip(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

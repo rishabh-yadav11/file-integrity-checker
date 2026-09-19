@@ -132,6 +132,7 @@ func (p *Pool) Start(algo model.Algorithm) {
 					continue
 				}
 				job.Entry.Hash = sum
+				job.Entry.Algorithm = algo
 				p.results <- job.Entry
 			}
 		}()

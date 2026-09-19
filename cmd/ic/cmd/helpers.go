@@ -239,6 +239,7 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 		return nil, err
 	}
 	e.Hash = sum
+	e.Algorithm = r.algo
 	return []model.Entry{*e}, nil
 }
 

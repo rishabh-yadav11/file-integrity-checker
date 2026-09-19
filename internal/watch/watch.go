@@ -193,6 +193,7 @@ func scanSingle(abs, root string, opts walk.Options) ([]model.Entry, error) {
 		return nil, err
 	}
 	e.Hash = sum
+	e.Algorithm = opts.Algo
 	return []model.Entry{*e}, nil
 }
 

@@ -93,6 +93,7 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 				return nil, err
 			}
 			e.Hash = sum
+			e.Algorithm = opts.Algo
 			current = []model.Entry{*e}
 			singleFile = true
 		}
