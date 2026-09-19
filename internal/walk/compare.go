@@ -159,10 +159,27 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 			if scope != "" && !strings.HasPrefix(e.Path, scope+"/") {
 				continue
 			}
+			// A baselined file that became a directory is a type change,
+			// not a disappearance.
+			if r := dirSwapResult(e, baseRoot); r != nil {
+				out = append(out, *r)
+				continue
+			}
 			out = append(out, model.Result{Path: e.Path, Kind: model.KindMissing})
 		}
 	}
 	return out, nil
+}
+
+// dirSwapResult returns a Modified result when a baseline entry that was
+// a file now exists as a directory, or nil otherwise.
+func dirSwapResult(e model.Entry, baseRoot string) *model.Result {
+	full := filepath.Join(baseRoot, filepath.FromSlash(e.Path))
+	if fi, err := os.Lstat(full); err == nil && fi.IsDir() {
+		return &model.Result{Path: e.Path, Kind: model.KindModified,
+			Reasons: []string{"type changed: file -> directory"}}
+	}
+	return nil
 }
 
 // isOutside reports whether a Rel result escapes its parent (e.g. "../x").

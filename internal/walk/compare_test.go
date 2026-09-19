@@ -331,6 +331,42 @@ func TestCompareLinkRetarget(t *testing.T) {
 	}
 }
 
+// TestCompareFileToDirSwap verifies a baselined file replaced by a
+// directory is reported as a type change (modified), not MISSING.
+func TestCompareFileToDirSwap(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Root: root, Entries: mustScan(t, root, opts)}
+	if err := os.Remove(filepath.Join(root, "notes.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "notes.txt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes.txt", "inner.log"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Compare(root, base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]model.Result{}
+	for _, r := range results {
+		byPath[r.Path] = r
+	}
+	r, ok := byPath["notes.txt"]
+	if !ok {
+		t.Fatalf("notes.txt missing from results: %v", byPath)
+	}
+	if r.Kind != model.KindModified {
+		t.Fatalf("notes.txt (file->dir) = %s, want modified (type change)", r.Kind)
+	}
+	if r.Kind == model.KindMissing {
+		t.Fatal("file->dir swap must not be reported as MISSING")
+	}
+}
+
 func TestCompareSingleFileLegacyRoot(t *testing.T) {
 	t.Parallel()
 	root := makeTree(t)
