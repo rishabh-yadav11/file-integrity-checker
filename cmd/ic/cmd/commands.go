@@ -57,12 +57,13 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 			// A baseline stored inside the tree it describes is
-			// self-referential: every Save changes it, so every later
-			// check flags it as modified. Warn so the operator notices
-			// before building automation on a perpetually-failing check.
+			// self-referential: it is auto-excluded from scans (so it
+			// never flags itself), but the file still lives where a
+			// writable process could alter it. Warn so the operator
+			// stores it outside the tree.
 			absBase, _ := filepath.Abs(r.cfg.Baseline)
 			if rel, err := filepath.Rel(abs, absBase); err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
-				r.log.Warn("baseline is inside the watched tree; it will be re-baselined and flagged as modified on every run - store it outside the tree",
+				r.log.Warn("baseline is inside the watched tree; it is auto-excluded from scans - store it outside the tree so it cannot be modified in place",
 					slog.String("baseline", r.cfg.Baseline),
 					slog.String("root", abs))
 			}

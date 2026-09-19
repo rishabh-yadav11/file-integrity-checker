@@ -175,6 +175,14 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 		entries = append(entries, e)
 		mu.Unlock()
 	}
+	// addErr appends an error under mu. It is called from both the WalkDir
+	// callback (serial in the walker goroutine) and the errWG drain goroutine,
+	// so all appends to errs must be mutex-guarded to avoid a data race.
+	addErr := func(e error) {
+		mu.Lock()
+		errs = append(errs, e)
+		mu.Unlock()
+	}
 	var drainWG sync.WaitGroup
 	drainWG.Add(1)
 	go func() {
@@ -200,7 +208,7 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Report unreadable paths as errors but keep scanning siblings.
-			errs = append(errs, fmt.Errorf("walk %s: %w", path, err))
+			addErr(fmt.Errorf("walk %s: %w", path, err))
 			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -227,7 +235,7 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 			// a link to a regular file is hashed through its target.
 			link, err := StatEntry(path, relSlash)
 			if err != nil {
-				errs = append(errs, err)
+				addErr(err)
 				return nil
 			}
 			if opts.FollowSymlinks {
@@ -266,7 +274,7 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 		}
 		entry, err := StatEntry(path, relSlash)
 		if err != nil {
-			errs = append(errs, err)
+			addErr(err)
 			return nil
 		}
 		pool.Submit(hash.Job{Path: path, Entry: entry})

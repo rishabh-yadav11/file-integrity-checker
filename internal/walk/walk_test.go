@@ -351,6 +351,49 @@ func TestScanSymlinkDirRootRejected(t *testing.T) {
 	}
 }
 
+// TestScanSymlinkToDirNotFollowed verifies a symlink whose target is a
+// directory is recorded as a link and never recursed, even with
+// FollowSymlinks (which only follows links to regular files).
+func TestScanSymlinkToDirNotFollowed(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "realdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "realdir", "x.log"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "realdir"), filepath.Join(root, "linkdir")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	entries, err := Scan(root, Options{FollowSymlinks: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]model.Entry{}
+	for _, e := range entries {
+		byPath[e.Path] = e
+	}
+	link, ok := byPath["linkdir"]
+	if !ok {
+		t.Fatalf("dir-target symlink not recorded: %v", byPath)
+	}
+	if link.LinkTarget == "" {
+		t.Error("dir-target symlink should carry its target string")
+	}
+	if link.Hash != "" {
+		t.Errorf("dir-target symlink must not be hashed, got %q", link.Hash)
+	}
+	if _, ok := byPath["realdir/x.log"]; !ok {
+		t.Fatalf("realdir/x.log missing from scan")
+	}
+	for p := range byPath {
+		if strings.HasPrefix(p, "linkdir/") {
+			t.Fatalf("symlink to directory was recursed: %s", p)
+		}
+	}
+}
+
 func TestSkip(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
