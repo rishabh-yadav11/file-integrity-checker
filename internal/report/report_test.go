@@ -21,7 +21,7 @@ func sampleResults() []model.Result {
 // caller's slice order untouched.
 func TestRenderDoesNotMutateInput(t *testing.T) {
 	t.Parallel()
-	in := []model.Result{{Path: "z.log"}, {Path: "a.log"}, {Path: "m.log"}}
+	in := []model.Result{{Path: "z.log", Kind: model.KindUnmodified}, {Path: "a.log", Kind: model.KindUnmodified}, {Path: "m.log", Kind: model.KindUnmodified}}
 	before := append([]model.Result{}, in...)
 	if err := Render(discardWriter{}, in, Options{}); err != nil {
 		t.Fatal(err)
