@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/model"
 )
@@ -256,6 +257,26 @@ func TestScanSetsEntryAlgorithm(t *testing.T) {
 		if e.Algorithm != model.AlgoSHA256 {
 			t.Errorf("entry %s algorithm = %q, want sha256", e.Path, e.Algorithm)
 		}
+	}
+}
+
+// TestOptionsDiffIgnoreMtime verifies content-only comparison: metadata
+// changes produce no diff, but a hash change still does.
+func TestOptionsDiffIgnoreMtime(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	old := model.Entry{Hash: "h", Size: 10, Mode: 0o644, UID: 0, GID: 0, Mtime: now}
+	cur := old
+	cur.Mtime = now.Add(time.Hour)
+	cur.Size = 999
+	cur.Mode = 0o700
+	if got := (Options{IgnoreMtime: true}).Diff(cur, old); len(got) != 0 {
+		t.Fatalf("content-only diff should ignore metadata, got %v", got)
+	}
+	cur.Hash = "different"
+	got := (Options{IgnoreMtime: true}).Diff(cur, old)
+	if len(got) != 1 || got[0] != "hash" {
+		t.Fatalf("content-only diff should flag hash, got %v", got)
 	}
 }
 

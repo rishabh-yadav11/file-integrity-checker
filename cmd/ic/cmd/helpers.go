@@ -89,6 +89,10 @@ func flagsToOverrides(cmd *cobra.Command) config.FlagOverrides {
 		v, _ := cmd.Flags().GetBool("follow-symlinks")
 		ov.FollowSymlinks = &v
 	}
+	if f := cmd.Flags().Lookup("ignore-mtime"); f != nil && f.Changed {
+		v, _ := cmd.Flags().GetBool("ignore-mtime")
+		ov.IgnoreMtime = &v
+	}
 	if f := cmd.Flags().Lookup("include"); f != nil && f.Changed {
 		v, _ := cmd.Flags().GetStringArray("include")
 		ov.Include = v
@@ -185,6 +189,7 @@ func (r *runtime) scanOpts() walk.Options {
 		Exclude:        r.cfg.Exclude,
 		Workers:        r.cfg.Workers,
 		FollowSymlinks: r.cfg.FollowSymlinks,
+		IgnoreMtime:    r.cfg.IgnoreMtime,
 		Warn: func(format string, args ...any) {
 			r.log.Warn(fmt.Sprintf(format, args...))
 		},

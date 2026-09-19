@@ -135,7 +135,7 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 			out = append(out, model.Result{Path: cur.Path, Kind: model.KindNew})
 			continue
 		}
-		if reasons := Diff(cur, old); len(reasons) > 0 {
+		if reasons := opts.Diff(cur, old); len(reasons) > 0 {
 			out = append(out, model.Result{Path: cur.Path, Kind: model.KindModified, Reasons: reasons})
 		} else {
 			out = append(out, model.Result{Path: cur.Path, Kind: model.KindUnmodified})

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFullWorkflow(t *testing.T) {
@@ -328,6 +329,36 @@ func TestKeyfileLoosePermsRefused(t *testing.T) {
 		"init", dir, "--baseline", bl, "--keyfile", kf, "--allow-loose-keyfile")
 	if code != ExitOK {
 		t.Fatalf("loose keyfile with override = %d, want 0:\n%s", code, out)
+	}
+}
+
+// TestIgnoreMtimeFlag verifies --ignore-mtime makes check content-only:
+// an mtime-only change no longer triggers a modification.
+func TestIgnoreMtimeFlag(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(filepath.Join(logs, "a.log"), future, future); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", bl); code != ExitChanges {
+		t.Fatalf("mtime-only change without flag = %d, want 1", code)
+	}
+	code, out := runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", bl, "--ignore-mtime")
+	if code != ExitOK {
+		t.Fatalf("mtime-only change with --ignore-mtime = %d, want 0:\n%s", code, out)
 	}
 }
 

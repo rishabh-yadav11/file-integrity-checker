@@ -257,7 +257,7 @@ func handleEvent(ctx context.Context, cfg Config, baseByPath map[string]model.En
 		case !ok:
 			emit(cfg, Event{Path: e.Path, Op: "create", Kind: model.KindNew, Time: time.Now()})
 		default:
-			if reasons := walk.Diff(e, old); len(reasons) > 0 {
+			if reasons := cfg.ScanOpts.Diff(e, old); len(reasons) > 0 {
 				emit(cfg, Event{Path: e.Path, Op: "write", Kind: model.KindModified,
 					Time: time.Now(), Details: strings.Join(reasons, ", ")})
 			}

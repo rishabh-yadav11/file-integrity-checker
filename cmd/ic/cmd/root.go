@@ -43,6 +43,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().Bool("allow-loose-keyfile", false, "permit a group/world-readable keyfile (default: refuse)")
 	root.PersistentFlags().String("webhook", "", "webhook URL for tamper alerts")
 	root.PersistentFlags().Bool("follow-symlinks", false, "follow symlinks and hash their targets (default: record links, never follow)")
+	root.PersistentFlags().Bool("ignore-mtime", false, "compare content (hash) only, ignoring size/mode/owner/mtime")
 	root.PersistentFlags().StringArray("include", nil, "include globs")
 	root.PersistentFlags().StringArray("exclude", nil, "exclude globs")
 	root.AddCommand(newInitCmd(), newCheckCmd(), newUpdateCmd(), newWatchCmd(), newVerifyBaselineCmd())

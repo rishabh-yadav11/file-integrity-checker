@@ -4,6 +4,7 @@
 package walk
 
 import (
+	"crypto/hmac"
 	"fmt"
 	"io/fs"
 	"os"
@@ -35,6 +36,21 @@ type Options struct {
 	// Warn, when non-nil, is called for skipped non-regular files
 	// (FIFOs, sockets, devices) so skips are visible instead of silent.
 	Warn func(format string, args ...any)
+	// IgnoreMtime compares content (hash) only, ignoring size/mode/owner/
+	// mtime metadata differences (--ignore-mtime).
+	IgnoreMtime bool
+}
+
+// Diff compares cur vs old under these options. When IgnoreMtime is set
+// the comparison is content-only (hash only).
+func (o Options) Diff(cur, old model.Entry) []string {
+	if o.IgnoreMtime {
+		if !hmac.Equal([]byte(cur.Hash), []byte(old.Hash)) {
+			return []string{"hash"}
+		}
+		return nil
+	}
+	return Diff(cur, old)
 }
 
 // excludeAbs reports whether absolute path p matches any ExcludePaths

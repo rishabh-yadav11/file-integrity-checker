@@ -31,6 +31,8 @@ type Config struct {
 	FollowSymlinks bool `yaml:"follow_symlinks"`
 	// AllowLooseKeyfile permits a group/world-readable keyfile (default: refuse).
 	AllowLooseKeyfile bool `yaml:"allow_loose_keyfile"`
+	// IgnoreMtime compares content (hash) only, ignoring metadata.
+	IgnoreMtime bool `yaml:"ignore_mtime"`
 }
 
 // Default returns the built-in defaults.
@@ -84,6 +86,7 @@ type FlagOverrides struct {
 	Webhook   *string
 	FollowSymlinks *bool
 	AllowLooseKeyfile *bool
+	IgnoreMtime *bool
 	Include   []string // appended to file values
 	Exclude   []string
 }
@@ -119,6 +122,9 @@ func (cfg Config) Apply(o FlagOverrides) Config {
 	}
 	if o.AllowLooseKeyfile != nil {
 		cfg.AllowLooseKeyfile = *o.AllowLooseKeyfile
+	}
+	if o.IgnoreMtime != nil {
+		cfg.IgnoreMtime = *o.IgnoreMtime
 	}
 	if len(o.Include) > 0 {
 		cfg.Include = append(cfg.Include, o.Include...)
