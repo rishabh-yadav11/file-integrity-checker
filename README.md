@@ -160,4 +160,6 @@ make fuzz     # fuzz the baseline parser (60s)
 make docker   # container image
 ```
 
-License: see repository settings.
+## License
+
+MIT. See [LICENSE](LICENSE).
