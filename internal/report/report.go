@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/model"
@@ -98,6 +99,16 @@ func renderText(w io.Writer, results []model.Result, opts Options) error {
 	return nil
 }
 
+// display renders a path for text output, quoting it with strconv.Quote
+// when it contains control characters (e.g. a newline) so the line
+// cannot be broken or forged.
+func display(p string) string {
+	if strings.ContainsAny(p, "\r\n") {
+		return strconv.Quote(p)
+	}
+	return p
+}
+
 func writeLine(w io.Writer, r model.Result, color bool) error {
 	reason := ""
 	if len(r.Reasons) > 0 {
@@ -106,17 +117,17 @@ func writeLine(w io.Writer, r model.Result, color bool) error {
 	switch r.Kind {
 	case model.KindUnmodified:
 		if color {
-			_, err := fmt.Fprintf(w, "%sUNMODIFIED%s %s\n", cGreen, cReset, r.Path)
+			_, err := fmt.Fprintf(w, "%sUNMODIFIED%s %s\n", cGreen, cReset, display(r.Path))
 			return err
 		}
-		_, err := fmt.Fprintf(w, "UNMODIFIED %s\n", r.Path)
+		_, err := fmt.Fprintf(w, "UNMODIFIED %s\n", display(r.Path))
 		return err
 	case model.KindModified:
-		return writeTagged(w, color, cRed, "MODIFIED", r.Path, reason)
+		return writeTagged(w, color, cRed, "MODIFIED", display(r.Path), reason)
 	case model.KindNew:
-		return writeTagged(w, color, cYellow, "NEW", r.Path, reason)
+		return writeTagged(w, color, cYellow, "NEW", display(r.Path), reason)
 	case model.KindMissing:
-		return writeTagged(w, color, cRed, "MISSING", r.Path, reason)
+		return writeTagged(w, color, cRed, "MISSING", display(r.Path), reason)
 	default:
 		return fmt.Errorf("unknown change kind %q", r.Kind)
 	}

@@ -37,6 +37,23 @@ type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
+// TestRenderQuotesNewlinePaths verifies filenames containing newlines are
+// quoted in text output so the line cannot be broken or forged.
+func TestRenderQuotesNewlinePaths(t *testing.T) {
+	t.Parallel()
+	var buf strings.Builder
+	results := []model.Result{{Path: "evil\nlog", Kind: model.KindNew}}
+	if err := Render(&buf, results, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `"evil\nlog"`) {
+		t.Fatalf("expected quoted path, got: %q", buf.String())
+	}
+	if strings.Contains(buf.String(), "evil\nlog") {
+		t.Fatalf("raw newline leaked into output: %q", buf.String())
+	}
+}
+
 func TestCount(t *testing.T) {
 	t.Parallel()
 	s := Count(sampleResults())
