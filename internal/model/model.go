@@ -45,13 +45,17 @@ const (
 // Path is slash-separated and relative to the scan root.
 type Entry struct {
 	Path      string    `json:"path"`
-	Hash      string    `json:"hash"`
+	Hash      string    `json:"hash,omitempty"`
 	Size      int64     `json:"size"`
 	Mode      uint32    `json:"mode"`
 	UID       uint32    `json:"uid"`
 	GID       uint32    `json:"gid"`
 	Mtime     time.Time `json:"mtime"`
-	Algorithm Algorithm `json:"algorithm"`
+	Algorithm Algorithm `json:"algorithm,omitempty"`
+	// LinkTarget holds the symlink target string for symlink entries
+	// (empty for regular files). It lets check detect new and
+	// retargeted links without ever following them.
+	LinkTarget string `json:"link_target,omitempty"`
 }
 
 // Result is the outcome of comparing one file against the baseline.

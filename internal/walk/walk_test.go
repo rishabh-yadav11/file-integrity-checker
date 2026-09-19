@@ -49,7 +49,7 @@ func TestScanAllFiles(t *testing.T) {
 	for _, e := range entries {
 		got[e.Path] = true
 	}
-	want := []string{"a.log", "b.log", "notes.txt", "sub/c.log", "sub/deep/d.log", "skipme/secret.log"}
+	want := []string{"a.log", "b.log", "notes.txt", "sub/c.log", "sub/deep/d.log", "skipme/secret.log", "link-to-a", "dangling"}
 	if len(got) != len(want) {
 		t.Fatalf("scan returned %d entries (%v), want %d", len(got), got, len(want))
 	}
@@ -74,17 +74,30 @@ func TestScanEntriesSorted(t *testing.T) {
 	}
 }
 
-func TestScanSymlinksSkipped(t *testing.T) {
+func TestScanRecordsSymlinks(t *testing.T) {
 	t.Parallel()
 	root := makeTree(t)
 	entries, err := Scan(root, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	byPath := map[string]model.Entry{}
 	for _, e := range entries {
-		if e.Path == "link-to-a" || e.Path == "dangling" {
-			t.Errorf("symlink %q was recorded in baseline", e.Path)
-		}
+		byPath[e.Path] = e
+	}
+	// Symlinks are recorded (target string, never hashed/followed).
+	link, ok := byPath["link-to-a"]
+	if !ok {
+		t.Fatalf("symlink link-to-a not recorded: %v", byPath)
+	}
+	if link.Hash != "" {
+		t.Errorf("symlink must not be hashed, got hash %q", link.Hash)
+	}
+	if link.LinkTarget != filepath.Join(root, "a.log") {
+		t.Errorf("link-to-a target = %q, want %q", link.LinkTarget, filepath.Join(root, "a.log"))
+	}
+	if _, ok := byPath["dangling"]; !ok {
+		t.Errorf("broken symlink dangling not recorded")
 	}
 }
 
@@ -192,6 +205,38 @@ func TestScanBadAlgorithm(t *testing.T) {
 	root := makeTree(t)
 	if _, err := Scan(root, Options{Algo: model.Algorithm("md5")}); err == nil {
 		t.Fatal("expected error for unsupported algorithm")
+	}
+}
+
+// TestScanFollowSymlinks verifies that with FollowSymlinks a symlink to a
+// regular file is hashed through its target (while still recording the link).
+func TestScanFollowSymlinks(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	entries, err := Scan(root, Options{FollowSymlinks: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var link, target *model.Entry
+	for i := range entries {
+		switch entries[i].Path {
+		case "link-to-a":
+			link = &entries[i]
+		case "a.log":
+			target = &entries[i]
+		}
+	}
+	if link == nil || target == nil {
+		t.Fatalf("missing entries: link=%v target=%v", link, target)
+	}
+	if link.Hash == "" {
+		t.Errorf("follow-symlinks: link-to-a should be hashed")
+	}
+	if link.Hash != target.Hash {
+		t.Errorf("link hash %q != target hash %q", link.Hash, target.Hash)
+	}
+	if link.LinkTarget == "" {
+		t.Errorf("follow-symlinks: link target not recorded")
 	}
 }
 

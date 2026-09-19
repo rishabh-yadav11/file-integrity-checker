@@ -81,6 +81,10 @@ func flagsToOverrides(cmd *cobra.Command) config.FlagOverrides {
 		v := f.Value.String()
 		ov.Webhook = &v
 	}
+	if f := cmd.Flags().Lookup("follow-symlinks"); f != nil && f.Changed {
+		v, _ := cmd.Flags().GetBool("follow-symlinks")
+		ov.FollowSymlinks = &v
+	}
 	if f := cmd.Flags().Lookup("include"); f != nil && f.Changed {
 		v, _ := cmd.Flags().GetStringArray("include")
 		ov.Include = v
@@ -163,10 +167,11 @@ func (r *runtime) loadBaseline() (model.Baseline, error) {
 
 func (r *runtime) scanOpts() walk.Options {
 	opts := walk.Options{
-		Algo:    r.algo,
-		Include: r.cfg.Include,
-		Exclude: r.cfg.Exclude,
-		Workers: r.cfg.Workers,
+		Algo:           r.algo,
+		Include:        r.cfg.Include,
+		Exclude:        r.cfg.Exclude,
+		Workers:        r.cfg.Workers,
+		FollowSymlinks: r.cfg.FollowSymlinks,
 	}
 	// Auto-exclude the baseline file itself so a baseline stored inside
 	// the tree it describes never flags its own path as new/modified.
@@ -178,11 +183,13 @@ func (r *runtime) scanOpts() walk.Options {
 
 // scan hashes a path that may be a single file or a directory.
 func (r *runtime) scan(path string) ([]model.Entry, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
-	if !info.IsDir() {
+	// Symlinks are never followed for a single-file init: record the
+	// link target instead of hashing through it.
+	if info.Mode()&os.ModeSymlink != 0 {
 		abs, err := filepath.Abs(path)
 		if err != nil {
 			return nil, err
@@ -191,16 +198,27 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		// One file: hash inline; a worker pool would start Workers
-		// goroutines to process a single job.
-		sum, err := hash.FileBuffer(abs, r.algo, make([]byte, 1<<20))
-		if err != nil {
-			return nil, err
-		}
-		e.Hash = sum
 		return []model.Entry{*e}, nil
 	}
-	return walk.Scan(path, r.scanOpts())
+	if info.IsDir() {
+		return walk.Scan(path, r.scanOpts())
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	e, err := walk.StatEntry(abs, filepath.Base(abs))
+	if err != nil {
+		return nil, err
+	}
+	// One file: hash inline; a worker pool would start Workers
+	// goroutines to process a single job.
+	sum, err := hash.FileBuffer(abs, r.algo, make([]byte, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	e.Hash = sum
+	return []model.Entry{*e}, nil
 }
 
 // cmdColor returns the changed state of a bool flag (false if unset).

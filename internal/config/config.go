@@ -26,6 +26,8 @@ type Config struct {
 	WebhookURL string   `yaml:"webhook_url"`
 	KeyFile    string   `yaml:"key_file"`
 	Workers    int      `yaml:"workers"`
+	// FollowSymlinks opts into hashing symlink targets on scan.
+	FollowSymlinks bool `yaml:"follow_symlinks"`
 }
 
 // Default returns the built-in defaults.
@@ -77,6 +79,7 @@ type FlagOverrides struct {
 	Workers   *int
 	KeyFile   *string
 	Webhook   *string
+	FollowSymlinks *bool
 	Include   []string // appended to file values
 	Exclude   []string
 }
@@ -106,6 +109,9 @@ func (cfg Config) Apply(o FlagOverrides) Config {
 	}
 	if o.Webhook != nil {
 		cfg.WebhookURL = *o.Webhook
+	}
+	if o.FollowSymlinks != nil {
+		cfg.FollowSymlinks = *o.FollowSymlinks
 	}
 	if len(o.Include) > 0 {
 		cfg.Include = append(cfg.Include, o.Include...)

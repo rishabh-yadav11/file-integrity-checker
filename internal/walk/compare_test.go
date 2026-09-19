@@ -293,6 +293,44 @@ func TestCompareDeletedSingleFileMissing(t *testing.T) {
 	}
 }
 
+// TestCompareLinkRetarget verifies a symlink whose target changed is
+// reported as modified with a link-target reason.
+func TestCompareLinkRetarget(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Root: root, Entries: mustScan(t, root, opts)}
+	// Retarget link-to-a from a.log to b.log.
+	if err := os.Remove(filepath.Join(root, "link-to-a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "b.log"), filepath.Join(root, "link-to-a")); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Compare(root, base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mod *model.Result
+	for i := range results {
+		if results[i].Path == "link-to-a" {
+			mod = &results[i]
+		}
+	}
+	if mod == nil || mod.Kind != model.KindModified {
+		t.Fatalf("retargeted link results = %+v, want modified", results)
+	}
+	found := false
+	for _, r := range mod.Reasons {
+		if strings.HasPrefix(r, "link target") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected link-target reason, got %v", mod.Reasons)
+	}
+}
+
 func TestCompareSingleFileLegacyRoot(t *testing.T) {
 	t.Parallel()
 	root := makeTree(t)

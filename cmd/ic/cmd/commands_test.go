@@ -224,6 +224,38 @@ func TestMissingBaselineMessage(t *testing.T) {
 	}
 }
 
+// TestInitSingleFileSymlinkNoFollow verifies single-file init of a
+// symlink records the link target and never hashes/follows the target.
+func TestInitSingleFileSymlinkNoFollow(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.log")
+	if err := os.WriteFile(target, []byte("secret content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.log")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	code, out := runCLIIn(t, dir, dir, env, "init", "link.log", "--baseline", "b.json")
+	if code != ExitOK {
+		t.Fatalf("single-file symlink init: %d %s", code, out)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "b.json"))
+	if strings.Contains(string(raw), `"hash"`) {
+		t.Fatalf("single-file symlink init must not hash the target: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"link_target"`) {
+		t.Fatalf("expected link_target recorded in baseline: %s", raw)
+	}
+	// check of the symlink stays clean (no follow).
+	code, out = runCLIIn(t, dir, dir, env, "check", "link.log", "--baseline", "b.json")
+	if code != ExitOK {
+		t.Fatalf("symlink single-file check: %d %s", code, out)
+	}
+}
+
 func TestCheckTamperExitOne(t *testing.T) {
 	// not parallel: t.Setenv/Chdir in harness
 	dir := t.TempDir()

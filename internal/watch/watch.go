@@ -240,12 +240,24 @@ func handleEvent(ctx context.Context, cfg Config, baseByPath map[string]model.En
 	// contain symlinks (walk skips them), so treat this as a tamper of
 	// the original entry instead of following the link.
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		if old, ok := baseByPath[filepath.ToSlash(rel)]; ok {
-			emit(cfg, Event{Path: old.Path, Op: "symlink", Kind: model.KindModified,
-				Time: time.Now(), Details: "path changed from regular file to symlink"})
-		} else {
-			emit(cfg, Event{Path: filepath.ToSlash(rel), Op: "symlink", Kind: model.KindNew,
+		// Record the link (never follow); compare against any baseline
+		// entry to distinguish a retarget, a file->link swap, or a new link.
+		entry, serr := walk.StatEntry(path, filepath.ToSlash(rel))
+		if serr != nil {
+			cfg.Log.Warn("rescan failed", slog.String("path", path), slog.String("err", serr.Error()))
+			return
+		}
+		old, ok := baseByPath[entry.Path]
+		switch {
+		case !ok:
+			emit(cfg, Event{Path: entry.Path, Op: "symlink", Kind: model.KindNew,
 				Time: time.Now(), Details: "symlink created under watched root"})
+		case old.LinkTarget == "":
+			emit(cfg, Event{Path: entry.Path, Op: "symlink", Kind: model.KindModified,
+				Time: time.Now(), Details: "path changed from regular file to symlink"})
+		case old.LinkTarget != entry.LinkTarget:
+			emit(cfg, Event{Path: entry.Path, Op: "symlink", Kind: model.KindModified,
+				Time: time.Now(), Details: "symlink retargeted"})
 		}
 		return
 	}

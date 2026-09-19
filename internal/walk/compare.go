@@ -80,15 +80,21 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 		if err != nil {
 			return nil, err
 		}
-		// One file: hash inline; a worker pool would start Workers
-		// goroutines to process a single job.
-		sum, err := hash.FileBuffer(abs, opts.Algo, make([]byte, 1<<20))
-		if err != nil {
-			return nil, err
+		// A symlink target is recorded, never followed: no content hash.
+		if fi, lerr := os.Lstat(abs); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+			current = []model.Entry{*e}
+			singleFile = true
+		} else {
+			// One file: hash inline; a worker pool would start Workers
+			// goroutines to process a single job.
+			sum, err := hash.FileBuffer(abs, opts.Algo, make([]byte, 1<<20))
+			if err != nil {
+				return nil, err
+			}
+			e.Hash = sum
+			current = []model.Entry{*e}
+			singleFile = true
 		}
-		e.Hash = sum
-		current = []model.Entry{*e}
-		singleFile = true
 	} else {
 		// Directory check must be within (or be) the baseline's root.
 		// A different, non-overlapping path cannot be meaningfully
@@ -232,6 +238,9 @@ func Diff(cur, old model.Entry) []string {
 	}
 	if !cur.Mtime.Equal(old.Mtime) {
 		reasons = append(reasons, "mtime")
+	}
+	if cur.LinkTarget != old.LinkTarget {
+		reasons = append(reasons, fmt.Sprintf("link target %q -> %q", old.LinkTarget, cur.LinkTarget))
 	}
 	return reasons
 }

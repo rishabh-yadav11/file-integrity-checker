@@ -28,6 +28,10 @@ type Options struct {
 	// walk (no globbing). Used to keep a baseline stored inside the
 	// tree it describes from flagging itself as new/modified.
 	ExcludePaths []string
+	// FollowSymlinks opts into hashing the targets of symlinks to
+	// regular files. When false (default), symlinks are recorded as
+	// entries carrying their target string but never followed.
+	FollowSymlinks bool
 }
 
 // excludeAbs reports whether absolute path p matches any ExcludePaths
@@ -189,7 +193,27 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 			return nil // include patterns never prune directories
 		}
 		if d.Type()&os.ModeSymlink != 0 {
-			// Never hash or follow symlinks: record nothing, stay safe.
+			// Symlinks are recorded as entries carrying their target
+			// string (never followed by default). With FollowSymlinks,
+			// a link to a regular file is hashed through its target.
+			link, err := StatEntry(path, relSlash)
+			if err != nil {
+				errs = append(errs, err)
+				return nil
+			}
+			if opts.FollowSymlinks {
+				if fi, statErr := os.Stat(path); statErr == nil && fi.Mode().IsRegular() {
+					if opts.Skip(relSlash, false) {
+						return nil
+					}
+					pool.Submit(hash.Job{Path: path, Entry: link})
+					return nil
+				}
+			}
+			if opts.Skip(relSlash, false) {
+				return nil
+			}
+			collect(link)
 			return nil
 		}
 		if !d.Type().IsRegular() {
@@ -236,18 +260,26 @@ func entriesToSlice(es []*model.Entry) []model.Entry {
 }
 
 // StatEntry captures metadata for one file (hash filled later by pool).
+// For a symlink it records the target string without following it.
 func StatEntry(absPath, relPath string) (*model.Entry, error) {
 	info, err := os.Lstat(absPath)
 	if err != nil {
 		return nil, err
 	}
 	uid, gid := ownership(info)
+	target := ""
+	if info.Mode()&os.ModeSymlink != 0 {
+		if t, err := os.Readlink(absPath); err == nil {
+			target = t
+		}
+	}
 	return &model.Entry{
-		Path:  relPath,
-		Size:  info.Size(),
-		Mode:  uint32(info.Mode().Perm()),
-		UID:   uid,
-		GID:   gid,
-		Mtime: info.ModTime(),
+		Path:       relPath,
+		Size:       info.Size(),
+		Mode:       uint32(info.Mode().Perm()),
+		UID:        uid,
+		GID:        gid,
+		Mtime:      info.ModTime(),
+		LinkTarget: target,
 	}, nil
 }
