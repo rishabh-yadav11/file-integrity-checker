@@ -4,10 +4,10 @@ LDFLAGS := -s -w -X github.com/rishabh-yadav11/file-integrity-checker/cmd/ic/cmd
 
 .PHONY: all build test race vet fmt cover fuzz lint clean docker release
 
-all: build
+all: vet test build
 
 build:
-	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME) ./cmd/ic
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME) ./cmd/ic
 
 test:
 	go test ./... -timeout 10m
@@ -29,13 +29,17 @@ fuzz:
 	go test ./internal/baseline -run FuzzLoad -fuzz FuzzLoad -fuzztime 60s
 
 lint:
-	golangci-lint run
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run; \
+	else \
+		echo "golangci-lint not installed; skipping lint (install via https://golangci-lint.run)"; \
+	fi
 
 clean:
 	rm -rf dist coverage.out bin/
 
 docker:
-	docker build -t integrity-check:$(VERSION) .
+	docker build --build-arg VERSION=$(VERSION) -t integrity-check:$(VERSION) .
 
 release:
 	goreleaser release --clean
