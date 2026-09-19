@@ -172,6 +172,9 @@ func (r *runtime) scanOpts() walk.Options {
 		Exclude:        r.cfg.Exclude,
 		Workers:        r.cfg.Workers,
 		FollowSymlinks: r.cfg.FollowSymlinks,
+		Warn: func(format string, args ...any) {
+			r.log.Warn(fmt.Sprintf(format, args...))
+		},
 	}
 	// Auto-exclude the baseline file itself so a baseline stored inside
 	// the tree it describes never flags its own path as new/modified.
@@ -202,6 +205,11 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 	}
 	if info.IsDir() {
 		return walk.Scan(path, r.scanOpts())
+	}
+	// FIFOs, sockets, devices: never open them (a FIFO read would block).
+	if !info.Mode().IsRegular() {
+		r.log.Warn("skipping non-regular entry %s (type %v)", path, info.Mode())
+		return nil, nil
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {

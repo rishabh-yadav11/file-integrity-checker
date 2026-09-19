@@ -80,8 +80,9 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 		if err != nil {
 			return nil, err
 		}
-		// A symlink target is recorded, never followed: no content hash.
-		if fi, lerr := os.Lstat(abs); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+		// A symlink (or FIFO/socket/device) target is recorded, never
+		// followed or opened: no content hash (a FIFO read would block).
+		if fi, lerr := os.Lstat(abs); lerr == nil && (fi.Mode()&os.ModeSymlink != 0 || !fi.Mode().IsRegular()) {
 			current = []model.Entry{*e}
 			singleFile = true
 		} else {

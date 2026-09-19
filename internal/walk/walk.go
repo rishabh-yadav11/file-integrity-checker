@@ -32,6 +32,9 @@ type Options struct {
 	// regular files. When false (default), symlinks are recorded as
 	// entries carrying their target string but never followed.
 	FollowSymlinks bool
+	// Warn, when non-nil, is called for skipped non-regular files
+	// (FIFOs, sockets, devices) so skips are visible instead of silent.
+	Warn func(format string, args ...any)
 }
 
 // excludeAbs reports whether absolute path p matches any ExcludePaths
@@ -217,7 +220,12 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 			return nil
 		}
 		if !d.Type().IsRegular() {
-			return nil // sockets, devices, FIFOs: out of scope
+			// FIFOs, sockets, devices: never open them (a FIFO would
+			// block on read); skip with a visible warning.
+			if opts.Warn != nil {
+				opts.Warn("skipping non-regular entry %s (type %s)", path, d.Type())
+			}
+			return nil
 		}
 		if opts.Skip(relSlash, false) {
 			return nil
