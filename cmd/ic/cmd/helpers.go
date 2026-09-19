@@ -77,6 +77,10 @@ func flagsToOverrides(cmd *cobra.Command) config.FlagOverrides {
 		v := f.Value.String()
 		ov.KeyFile = &v
 	}
+	if f := cmd.Flags().Lookup("allow-loose-keyfile"); f != nil && f.Changed {
+		v, _ := cmd.Flags().GetBool("allow-loose-keyfile")
+		ov.AllowLooseKeyfile = &v
+	}
 	if f := cmd.Flags().Lookup("webhook"); f != nil && f.Changed {
 		v := f.Value.String()
 		ov.Webhook = &v
@@ -131,15 +135,18 @@ func loadRuntime(cmd *cobra.Command) (*runtime, error) {
 
 // resolveKey reads the HMAC key: env IC_KEY first, then keyfile.
 // A group/world-readable keyfile leaks the signing secret to every local
-// account; warn loudly but keep working (the file may be deliberately
-// provisioned that way by the operator).
+// account; it is refused by default unless --allow-loose-keyfile is given.
 func resolveKey(cfg config.Config) ([]byte, error) {
 	if env := os.Getenv("IC_KEY"); env != "" {
 		return []byte(env), nil
 	}
 	if cfg.KeyFile != "" {
 		if fi, err := os.Stat(cfg.KeyFile); err == nil && fi.Mode().Perm()&0o077 != 0 {
-			slog.Warn("keyfile is group/world readable; store it 0600",
+			if !cfg.AllowLooseKeyfile {
+				return nil, fmt.Errorf("keyfile %s is group/world readable (mode %04o); refusing - re-chmod it to 0600 or pass --allow-loose-keyfile to override",
+					cfg.KeyFile, fi.Mode().Perm())
+			}
+			slog.Warn("keyfile is group/world readable (override enabled); store it 0600",
 				slog.String("path", cfg.KeyFile),
 				slog.String("mode", fmt.Sprintf("%04o", fi.Mode().Perm())))
 		}
@@ -153,7 +160,8 @@ func resolveKey(cfg config.Config) ([]byte, error) {
 }
 
 // loadBaseline loads the baseline, wrapping a missing file with an
-// actionable "run init first" message.
+// actionable "run init first" message, and warns when the baseline file
+// is group/world readable.
 func (r *runtime) loadBaseline() (model.Baseline, error) {
 	b, err := r.store.Load(r.cfg.Baseline)
 	if err != nil {
@@ -161,6 +169,11 @@ func (r *runtime) loadBaseline() (model.Baseline, error) {
 			return b, fmt.Errorf("baseline not found: %s (run 'init' first)", r.cfg.Baseline)
 		}
 		return b, err
+	}
+	if fi, serr := os.Stat(r.cfg.Baseline); serr == nil && fi.Mode().Perm()&0o077 != 0 {
+		r.log.Warn("baseline file is group/world readable; store it 0600",
+			slog.String("path", r.cfg.Baseline),
+			slog.String("mode", fmt.Sprintf("%04o", fi.Mode().Perm())))
 	}
 	return b, nil
 }

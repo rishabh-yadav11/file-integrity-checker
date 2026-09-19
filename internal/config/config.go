@@ -29,6 +29,8 @@ type Config struct {
 	Workers    int      `yaml:"workers"`
 	// FollowSymlinks opts into hashing symlink targets on scan.
 	FollowSymlinks bool `yaml:"follow_symlinks"`
+	// AllowLooseKeyfile permits a group/world-readable keyfile (default: refuse).
+	AllowLooseKeyfile bool `yaml:"allow_loose_keyfile"`
 }
 
 // Default returns the built-in defaults.
@@ -81,6 +83,7 @@ type FlagOverrides struct {
 	KeyFile   *string
 	Webhook   *string
 	FollowSymlinks *bool
+	AllowLooseKeyfile *bool
 	Include   []string // appended to file values
 	Exclude   []string
 }
@@ -113,6 +116,9 @@ func (cfg Config) Apply(o FlagOverrides) Config {
 	}
 	if o.FollowSymlinks != nil {
 		cfg.FollowSymlinks = *o.FollowSymlinks
+	}
+	if o.AllowLooseKeyfile != nil {
+		cfg.AllowLooseKeyfile = *o.AllowLooseKeyfile
 	}
 	if len(o.Include) > 0 {
 		cfg.Include = append(cfg.Include, o.Include...)
