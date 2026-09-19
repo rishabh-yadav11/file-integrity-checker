@@ -81,6 +81,10 @@ func Run(ctx context.Context, cfg Config) error {
 		pending = map[string]time.Time{}
 		flushCh = make(chan struct{}, 1)
 	)
+	// Baseline lookup index: handleEvent runs once per debounced event,
+	// so index the baseline once up front instead of rebuilding an
+	// O(entries) map (or linear scan) for every event burst.
+	baseByPath := baseIndex(cfg.Baseline)
 	// Debounce: coalesce bursts of fs events per path.
 	go func() {
 		ticker := time.NewTicker(50 * time.Millisecond)
@@ -102,7 +106,7 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 			mu.Unlock()
 			for _, p := range ready {
-				handleEvent(ctx, cfg, p)
+				handleEvent(ctx, cfg, baseByPath, p)
 			}
 		}
 	}()
@@ -205,14 +209,14 @@ func scanSingle(abs, root string, opts walk.Options) ([]model.Entry, error) {
 	return entries, nil
 }
 
-// baseEntry looks up a baseline entry by slash-separated relative path.
-func baseEntry(b model.Baseline, rel string) (model.Entry, bool) {
+// baseIndex maps baseline entries by slash-separated relative path so
+// event handling does O(1) lookups instead of linear scans.
+func baseIndex(b model.Baseline) map[string]model.Entry {
+	m := make(map[string]model.Entry, len(b.Entries))
 	for _, e := range b.Entries {
-		if e.Path == rel {
-			return e, true
-		}
+		m[e.Path] = e
 	}
-	return model.Entry{}, false
+	return m
 }
 
 func mustRel(root, path string) string {
@@ -224,7 +228,8 @@ func mustRel(root, path string) string {
 }
 
 // handleEvent re-hashes one path and reports any change vs baseline.
-func handleEvent(ctx context.Context, cfg Config, path string) {
+// baseByPath is the prebuilt baseline index (built once in Run).
+func handleEvent(ctx context.Context, cfg Config, baseByPath map[string]model.Entry, path string) {
 	if err := ctx.Err(); err != nil {
 		return // shutting down: skip pending work
 	}
@@ -238,13 +243,10 @@ func handleEvent(ctx context.Context, cfg Config, path string) {
 	// Rotated logs: the old name vanished => report as missing only if
 	// it was in the baseline; the new file is reported as new.
 	if _, err := os.Lstat(path); err != nil {
-		// Path vanished: find baseline entry.
-		for _, e := range cfg.Baseline.Entries {
-			if e.Path == filepath.ToSlash(rel) {
-				emit(cfg, Event{Path: e.Path, Op: "remove", Kind: model.KindMissing,
-					Time: time.Now(), Details: "file disappeared while watched"})
-				break
-			}
+		// Path vanished: report only if it was in the baseline.
+		if e, ok := baseByPath[filepath.ToSlash(rel)]; ok {
+			emit(cfg, Event{Path: e.Path, Op: "remove", Kind: model.KindMissing,
+				Time: time.Now(), Details: "file disappeared while watched"})
 		}
 		return
 	}
@@ -253,7 +255,7 @@ func handleEvent(ctx context.Context, cfg Config, path string) {
 	// contain symlinks (walk skips them), so treat this as a tamper of
 	// the original entry instead of following the link.
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		if old, ok := baseEntry(cfg.Baseline, filepath.ToSlash(rel)); ok {
+		if old, ok := baseByPath[filepath.ToSlash(rel)]; ok {
 			emit(cfg, Event{Path: old.Path, Op: "symlink", Kind: model.KindModified,
 				Time: time.Now(), Details: "path changed from regular file to symlink"})
 		} else {
@@ -267,10 +269,6 @@ func handleEvent(ctx context.Context, cfg Config, path string) {
 	if err != nil {
 		cfg.Log.Warn("rescan failed", slog.String("path", path), slog.String("err", err.Error()))
 		return
-	}
-	baseByPath := map[string]model.Entry{}
-	for _, e := range cfg.Baseline.Entries {
-		baseByPath[e.Path] = e
 	}
 	for _, e := range cur {
 		old, ok := baseByPath[e.Path]

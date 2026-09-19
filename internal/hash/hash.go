@@ -39,9 +39,14 @@ func newHasher(algo model.Algorithm) (hash.Hash, error) {
 // chunks so arbitrarily large files hash in bounded memory. Directories
 // are rejected up front: reading a directory as an io.Reader blocks.
 func File(path string, algo model.Algorithm) (string, error) {
-	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
-		return "", fmt.Errorf("cannot hash directory %s", path)
-	}
+	return FileBuffer(path, algo, nil)
+}
+
+// FileBuffer hashes path like File but reads through the caller-supplied
+// chunk buffer, so hot loops (worker pools) can reuse one buffer instead
+// of allocating a fresh 1 MiB per file. The buffer is used only while
+// FileBuffer runs; pass nil to allocate a fresh one.
+func FileBuffer(path string, algo model.Algorithm, chunk []byte) (string, error) {
 	h, err := newHasher(algo)
 	if err != nil {
 		return "", err
@@ -51,7 +56,14 @@ func File(path string, algo model.Algorithm) (string, error) {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
-	if _, err := io.CopyBuffer(h, io.LimitReader(f, 1<<62), make([]byte, chunkSize)); err != nil {
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if fi.IsDir() {
+		return "", fmt.Errorf("cannot hash directory %s", path)
+	}
+	if _, err := io.CopyBuffer(h, f, chunk); err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
@@ -94,11 +106,15 @@ func NewPool(workers int) *Pool {
 // Start launches the worker goroutines. A panic inside hashing (e.g. a
 // defective hasher for an unexpected algo) is converted into a per-file
 // error instead of crashing the whole process mid-scan.
+//
+// Concurrency contract: each worker reuses one chunk buffer, so a scan
+// of N files allocates O(workers) chunk memory instead of O(files).
 func (p *Pool) Start(algo model.Algorithm) {
 	for i := 0; i < p.workers; i++ {
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
+			chunk := make([]byte, chunkSize) // reused across all files this worker hashes
 			for job := range p.jobs {
 				sum, err := func() (sum string, err error) {
 					defer func() {
@@ -107,7 +123,7 @@ func (p *Pool) Start(algo model.Algorithm) {
 							err = fmt.Errorf("hash %s: panicked: %v", job.Path, r)
 						}
 					}()
-					return File(job.Path, algo)
+					return FileBuffer(job.Path, algo, chunk)
 				}()
 				if err != nil {
 					p.errCh <- err
@@ -122,6 +138,11 @@ func (p *Pool) Start(algo model.Algorithm) {
 
 // Submit enqueues one file for hashing. Call Close when all jobs are
 // submitted; workers exit once the queue drains.
+//
+// Results and Errors are bounded channels: at least one goroutine must
+// drain Results (and Errors) concurrently with Submit/Wait, exactly as
+// walk.Scan does. Submitting many jobs without a concurrent drain will
+// block once the buffers fill; that is the documented contract.
 func (p *Pool) Submit(j Job) { p.jobs <- j }
 
 // Close signals that no more jobs will be submitted. After all queued

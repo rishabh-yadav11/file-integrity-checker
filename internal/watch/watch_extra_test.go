@@ -104,7 +104,7 @@ func TestHandleEventMissingFile(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "one.log")); err != nil {
 		t.Fatal(err)
 	}
-	handleEvent(context.Background(), cfg, filepath.Join(root, "one.log"))
+	handleEvent(context.Background(), cfg, baseIndex(cfg.Baseline), filepath.Join(root, "one.log"))
 	select {
 	case ev := <-trap.ch:
 		if ev.Kind != model.KindMissing {
@@ -128,13 +128,13 @@ func TestHandleEventNewFile(t *testing.T) {
 		Log:      testLogger(),
 	}
 	// Directory event: must not panic (scanSingle on dir fails silently).
-	handleEvent(context.Background(), cfg, filepath.Join(root, "sub"))
+	handleEvent(context.Background(), cfg, baseIndex(cfg.Baseline), filepath.Join(root, "sub"))
 	// A genuinely new file under root: handleEvent hashes it and emits New.
 	fresh := filepath.Join(root, "fresh.log")
 	if err := os.WriteFile(fresh, []byte("fresh"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	handleEvent(context.Background(), cfg, fresh)
+	handleEvent(context.Background(), cfg, baseIndex(cfg.Baseline), fresh)
 	select {
 	case ev := <-trap.ch:
 		if ev.Path != "fresh.log" || ev.Kind != model.KindNew {
@@ -191,7 +191,7 @@ func TestHandleEventSymlinkSwap(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(root, "one.log")); err != nil {
 		t.Fatal(err)
 	}
-	handleEvent(context.Background(), cfg, filepath.Join(root, "one.log"))
+	handleEvent(context.Background(), cfg, baseIndex(cfg.Baseline), filepath.Join(root, "one.log"))
 	select {
 	case ev := <-trap.ch:
 		if ev.Kind != model.KindModified || ev.Op != "symlink" {
@@ -208,7 +208,7 @@ func TestHandleEventSymlinkSwap(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	handleEvent(context.Background(), cfg, link)
+	handleEvent(context.Background(), cfg, baseIndex(cfg.Baseline), link)
 	select {
 	case ev := <-trap.ch:
 		if ev.Kind != model.KindNew || ev.Op != "symlink" {
@@ -239,7 +239,7 @@ func TestHandleEventRespectsExclude(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "two.log"), []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	handleEvent(context.Background(), cfg, filepath.Join(root, "two.log"))
+	handleEvent(context.Background(), cfg, baseIndex(cfg.Baseline), filepath.Join(root, "two.log"))
 	select {
 	case ev := <-trap.ch:
 		t.Fatalf("unexpected event for excluded path: %+v", ev)
