@@ -18,10 +18,12 @@
 package baseline
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,16 +59,16 @@ type doc struct {
 	HMAC string `json:"hmac"`
 }
 
-// computeMAC serializes the signed part deterministically and HMACs it.
-func (s *Store) computeMAC(d signedDoc) string {
+// computeMAC serializes the signed part deterministically and HMACs it,
+// returning an error instead of a silent empty tag on failure.
+func (s *Store) computeMAC(d signedDoc) (string, error) {
 	b, err := json.Marshal(d) // struct field order is fixed => deterministic
 	if err != nil {
-		// Cannot happen for these types; fail closed.
-		return ""
+		return "", fmt.Errorf("baseline: serialize for MAC: %w", err)
 	}
 	m := hmac.New(sha256.New, s.key)
 	m.Write(b)
-	return hex.EncodeToString(m.Sum(nil))
+	return hex.EncodeToString(m.Sum(nil)), nil
 }
 
 // Save writes b to path atomically with 0600 permissions and an HMAC tag.
@@ -78,7 +80,12 @@ func (s *Store) Save(path string, b model.Baseline) error {
 		Root:      b.Root,
 		Entries:   b.Entries,
 	}
-	d := doc{signedDoc: sd, HMAC: s.computeMAC(sd)}
+	d := doc{signedDoc: sd}
+	mac, err := s.computeMAC(sd)
+	if err != nil {
+		return err
+	}
+	d.HMAC = mac
 	payload, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return err
@@ -124,7 +131,7 @@ func (s *Store) Save(path string, b model.Baseline) error {
 }
 
 // ErrTampered is returned when the baseline HMAC does not verify.
-var ErrTampered = fmt.Errorf("baseline: HMAC verification failed (baseline may be tampered)")
+var ErrTampered = errors.New("baseline: HMAC verification failed (baseline may be tampered)")
 
 // Load reads path, verifies the HMAC, and returns the baseline.
 func (s *Store) Load(path string) (model.Baseline, error) {
@@ -133,7 +140,7 @@ func (s *Store) Load(path string) (model.Baseline, error) {
 		return model.Baseline{}, err
 	}
 	var d doc
-	dec := json.NewDecoder(bytesReader(raw))
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&d); err != nil {
 		return model.Baseline{}, fmt.Errorf("baseline: parse %s: %w", path, err)
@@ -144,8 +151,11 @@ func (s *Store) Load(path string) (model.Baseline, error) {
 	if dec.More() {
 		return model.Baseline{}, fmt.Errorf("baseline: parse %s: trailing data after JSON document", path)
 	}
-	want := s.computeMAC(d.signedDoc)
-	if want == "" || !hmac.Equal([]byte(want), []byte(d.HMAC)) {
+	want, err := s.computeMAC(d.signedDoc)
+	if err != nil {
+		return model.Baseline{}, err
+	}
+	if !hmac.Equal([]byte(want), []byte(d.HMAC)) {
 		return model.Baseline{}, ErrTampered
 	}
 	created, err := parseTime(d.CreatedAt)
