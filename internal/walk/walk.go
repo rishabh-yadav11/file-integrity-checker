@@ -151,9 +151,12 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err := os.Stat(root)
+	info, err := os.Lstat(root)
 	if err != nil {
 		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symlink; refusing to scan through it - use the real directory path", root)
 	}
 	if !info.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", root)

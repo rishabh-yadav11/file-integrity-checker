@@ -3,6 +3,7 @@ package walk
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -326,6 +327,27 @@ func TestScanEmptyDir(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("empty dir scan returned %d entries, want 0", len(entries))
+	}
+}
+
+// TestScanSymlinkDirRootRejected verifies scanning a symlink-to-directory
+// root fails with a clear error instead of silently following it.
+func TestScanSymlinkDirRootRejected(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "a.log"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if _, err := Scan(link, Options{}); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlink-dir root error = %v, want symlink rejection", err)
 	}
 }
 

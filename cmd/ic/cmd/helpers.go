@@ -209,8 +209,12 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 		return nil, err
 	}
 	// Symlinks are never followed for a single-file init: record the
-	// link target instead of hashing through it.
+	// link target instead of hashing through it. A symlink to a
+	// directory is rejected explicitly.
 	if info.Mode()&os.ModeSymlink != 0 {
+		if fi, serr := os.Stat(path); serr == nil && fi.IsDir() {
+			return nil, fmt.Errorf("%s is a symlink to a directory; use the real directory path", path)
+		}
 		abs, err := filepath.Abs(path)
 		if err != nil {
 			return nil, err
