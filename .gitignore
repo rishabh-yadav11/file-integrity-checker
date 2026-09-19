@@ -2,5 +2,6 @@ bin/
 dist/
 coverage.out
 *.tmp
+*.key
 baseline-*.json
 integrity-baseline.json

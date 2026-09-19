@@ -1,11 +1,12 @@
 # Build stage: compile a static binary.
-FROM golang:1.27-alpine AS build
+FROM golang:1.27.1-alpine AS build
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-s -w -X github.com/rishabh-yadav11/file-integrity-checker/cmd/ic/cmd.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+    -ldflags "-s -w -X github.com/rishabh-yadav11/file-integrity-checker/cmd/ic/cmd.version=${VERSION}" \
     -o /out/integrity-check ./cmd/ic
 
 # Runtime stage: distroless-style minimal image, non-root.
