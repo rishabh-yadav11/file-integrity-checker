@@ -171,7 +171,16 @@ func newUpdateCmd() *cobra.Command {
 			} else {
 				return fmt.Errorf("update: %s is outside baseline root %s", abs, base.Root)
 			}
-			if info, statErr := os.Stat(abs); statErr == nil && !info.IsDir() {
+			// Determine whether args[0] is a file or directory, and the
+			// exact relative path of a single-file target, so the merge
+			// below prunes only what is actually in scope.
+			info, statErr := os.Stat(abs)
+			dirUpdate := true
+			if statErr == nil && !info.IsDir() {
+				dirUpdate = false
+			}
+			relTarget := ""
+			if !dirUpdate {
 				// Single-file update: scan() names the entry by base
 				// name, so it maps onto the file's own directory inside
 				// the baseline root, not under a nested dir of itself.
@@ -185,6 +194,7 @@ func newUpdateCmd() *cobra.Command {
 				} else {
 					prefix = s + "/"
 				}
+				relTarget = prefix + filepath.Base(abs)
 			}
 			for i := range entries {
 				entries[i].Path = prefix + entries[i].Path
@@ -196,7 +206,17 @@ func newUpdateCmd() *cobra.Command {
 			merged := make([]model.Entry, 0, len(base.Entries)+len(entries))
 			for _, e := range base.Entries {
 				_, accepted := fresh[e.Path]
-				inside := prefix != "" && (e.Path == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(e.Path, prefix))
+				var inside bool
+				if dirUpdate {
+					// Directory update: any entry under the updated dir
+					// (the whole root when prefix == "") that no longer
+					// exists is pruned; kept siblings stay untouched.
+					inside = prefix == "" || e.Path == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(e.Path, prefix)
+				} else {
+					// Single-file update: only the file's own entry is in
+					// scope; siblings in the same directory are preserved.
+					inside = e.Path == relTarget
+				}
 				if inside && !accepted {
 					continue // vanished under the updated path
 				}
