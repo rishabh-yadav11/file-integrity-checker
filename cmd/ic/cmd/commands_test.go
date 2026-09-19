@@ -282,6 +282,30 @@ func TestInitFormatJSON(t *testing.T) {
 	}
 }
 
+// TestArgErrorConciseNoUsage verifies arg/flag errors exit 2 with a
+// concise error line and never dump full usage text.
+func TestArgErrorConciseNoUsage(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	cases := [][]string{
+		{"init", "a", "b"},        // too many args
+		{"init"},                  // missing arg
+		{"check", "--zzz", "x"},   // unknown flag
+		{"bogus-command"},         // unknown command
+	}
+	for _, args := range cases {
+		code, out := runCLIIn(t, t.TempDir(), t.TempDir(), map[string]string{"IC_KEY": "k"}, args...)
+		if code != ExitError {
+			t.Errorf("%v exit = %d, want 2 (out=%q)", args, code, out)
+		}
+		if strings.Contains(out, "Usage:") {
+			t.Errorf("%v printed usage text:\n%s", args, out)
+		}
+		if !strings.Contains(out, "error:") {
+			t.Errorf("%v must print a concise error line: %q", args, out)
+		}
+	}
+}
+
 func TestCheckTamperExitOne(t *testing.T) {
 	// not parallel: t.Setenv/Chdir in harness
 	dir := t.TempDir()
