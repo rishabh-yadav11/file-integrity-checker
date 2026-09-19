@@ -10,7 +10,7 @@ mtime), then detects any drift from that baseline.
 - **Commands**: `init`, `check`, `update`, `watch`, `verify-baseline`
 - **Algorithms**: SHA-256 (default), SHA-512, BLAKE2b via `--algo`
 - **Metadata tracking**: size, mode, owner (uid/gid on Unix), mtime compared alongside the digest
-- **Recursive scan** with `--include` / `--exclude` globs; symlinks are never followed or hashed, and a symlink swapped in where a regular file was baselined is flagged (op `symlink`)
+- **Recursive scan** with `--include` / `--exclude` globs; symlinks are recorded as entries with their target string but never followed/hashed by default (`--follow-symlinks` opts in), so link swaps and retargets are detected; FIFOs, sockets and devices are skipped with a warning and never opened
 - **File or directory paths**: `init`, `check`, and `update` all accept a single file as well as a directory
 - **Bounded worker pool** and chunked reads: large files hash in constant memory
 - **Signed baseline**: JSON, written atomically (temp file + rename), perms 0600, HMAC-SHA256 signed; one algorithm per baseline (update refuses to mix)
@@ -46,30 +46,63 @@ Releases for Linux/macOS/Windows (amd64/arm64) are built by GoReleaser on
 
 ```sh
 export IC_KEY='a-long-random-secret'      # HMAC key (or use --keyfile)
+BL=/var/lib/integrity-check/baseline.json
 
-integrity-check init /var/log/myapp --baseline /etc/ic/baseline.json
-integrity-check check /var/log/myapp --baseline /var/myapp.json -q
+integrity-check init /var/log/myapp --baseline "$BL"
+integrity-check check /var/log/myapp --baseline "$BL" -q
 # tamper a file, then:
-integrity-check check /var/log/myapp --baseline /var/myapp.json   # exit 1
-integrity-check verify-baseline --baseline /var/myapp.json
-integrity-check update /var/log/myapp --baseline /var/myapp.json   # accept changes
-integrity-check watch /var/log/myapp --baseline /var/myapp.json --webhook https://hooks.example/x
+integrity-check check /var/log/myapp --baseline "$BL"    # exit 1
+integrity-check verify-baseline --baseline "$BL"
+integrity-check update /var/log/myapp --baseline "$BL"   # accept changes
+integrity-check watch /var/log/myapp --baseline "$BL" --webhook https://hooks.example/x
 ```
+
+One baseline path (`$BL`) is used by every command. Keep the baseline (and
+the HMAC key) on a different host or offline media from the files it
+describes, and never store it inside the tree it monitors — `init` warns
+if you do and auto-excludes the in-tree baseline from its own scans.
 
 ### Example session
 
+Output is from a real run against `logs/` containing `app.log` and
+`other.log`, with the baseline stored as `baseline.json`:
+
 ```console
-$ integrity-check init logs/ --baseline b.json
-baseline written: b.json (2 files, sha256)
+$ integrity-check init logs/ --baseline baseline.json
+baseline written: baseline.json (2 files, sha256)
+
+$ integrity-check check logs/ --baseline baseline.json
+UNMODIFIED app.log
+UNMODIFIED other.log
+summary: 2 unmodified, 0 modified, 0 new, 0 missing (2 files)
 
 $ echo hacked >> logs/app.log
-$ integrity-check check logs/ --baseline b.json
-modified  logs/one.log  size, hash
-exit code: 1
+$ integrity-check check logs/ --baseline baseline.json
+MODIFIED app.log (hash, size 3 -> 9, mtime)
+UNMODIFIED other.log
+summary: 1 unmodified, 1 modified, 0 new, 0 missing (2 files)
+# exit code 1
 
-$ integrity-check check logs/ --baseline b.json --format json
-{ "results": [ { "path": "one.log", "kind": "modified" } ] }
+$ integrity-check check logs/ --baseline baseline.json --format json
+{
+  "results": [
+    {
+      "path": "app.log",
+      "kind": "modified",
+      "reasons": ["hash", "size 3 -> 9", "mtime"]
+    },
+    {
+      "path": "other.log",
+      "kind": "unmodified"
+    }
+  ]
+}
 ```
+
+Baseline fields: `version`, `algorithm`, `created_at`, `root` (absolute
+scan root), `entries[]` (each with `path`, `hash`, `size`, `mode`, `uid`,
+`gid`, `mtime`, optional `algorithm`, and `link_target` for symlinks), and
+an `hmac` covering the whole document.
 
 ### Options
 
@@ -79,11 +112,14 @@ $ integrity-check check logs/ --baseline b.json --format json
 | `--algo <name>` | `sha256` (default), `sha512`, `blake2b`; `check` defaults to the baseline's stored algorithm when omitted, an explicit different value fails the run |
 | `--format text|json` | output format |
 | `-q` / `--quiet` | hide unmodified lines; on a clean tree print nothing at all (CI/cron friendly, exit code still 0/1/2) |
-| `--include` / `--exclude` | glob filters, repeatable |
+| `--include` / `--exclude` | glob filters, repeatable (validated at load) |
 | `--workers N` | hashing workers (0 = NumCPU) |
 | `--keyfile <path>` | HMAC key file (else `IC_KEY` env) |
-| `--webhook <url>` | POST tamper alerts as JSON |
+| `--allow-loose-keyfile` | permit a group/world-readable keyfile (default: refuse) |
+| `--webhook <url>` | POST tamper alerts as JSON (watch) |
 | `--debounce 500ms` | watch-mode event coalescing window |
+| `--follow-symlinks` | follow symlinks and hash their targets (default: record the link target, never follow) |
+| `--ignore-mtime` | compare content (hash) only, ignoring size/mode/owner/mtime |
 
 Exit codes: `0` = clean, `1` = changes found, `2` = error.
 
