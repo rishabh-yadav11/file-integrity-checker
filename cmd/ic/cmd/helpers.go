@@ -148,6 +148,19 @@ func resolveKey(cfg config.Config) ([]byte, error) {
 	return nil, fmt.Errorf("no HMAC key available: set IC_KEY or --keyfile")
 }
 
+// loadBaseline loads the baseline, wrapping a missing file with an
+// actionable "run init first" message.
+func (r *runtime) loadBaseline() (model.Baseline, error) {
+	b, err := r.store.Load(r.cfg.Baseline)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return b, fmt.Errorf("baseline not found: %s (run 'init' first)", r.cfg.Baseline)
+		}
+		return b, err
+	}
+	return b, nil
+}
+
 func (r *runtime) scanOpts() walk.Options {
 	opts := walk.Options{
 		Algo:    r.algo,

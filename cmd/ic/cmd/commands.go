@@ -83,7 +83,7 @@ func newCheckCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			base, err := r.store.Load(r.cfg.Baseline)
+			base, err := r.loadBaseline()
 			if err != nil {
 				return err
 			}
@@ -139,7 +139,7 @@ func newUpdateCmd() *cobra.Command {
 			// the baseline root, replace any baseline entries under the
 			// updated path (including ones that vanished), and leave all
 			// other baseline entries untouched.
-			base, err := r.store.Load(r.cfg.Baseline)
+			base, err := r.loadBaseline()
 			if err != nil {
 				return err
 			}
@@ -256,7 +256,7 @@ func newVerifyBaselineCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := r.store.Load(r.cfg.Baseline); err != nil {
+			if _, err := r.loadBaseline(); err != nil {
 				return err
 			}
 			// Perms 0600 are part of the contract (goal: baseline 0600).

@@ -201,6 +201,29 @@ func TestEmptyDirInitAllowed(t *testing.T) {
 	}
 }
 
+// TestMissingBaselineMessage verifies check without a baseline exits 2
+// with an actionable "run init first" message.
+func TestMissingBaselineMessage(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"check", "logs", "--baseline", "nope.json")
+	if code != ExitError {
+		t.Fatalf("check before init = %d, want 2:\n%s", code, out)
+	}
+	if !strings.Contains(out, "baseline not found") || !strings.Contains(out, "nope.json") ||
+		!strings.Contains(out, "run 'init' first") {
+		t.Fatalf("missing-baseline message unclear:\n%s", out)
+	}
+}
+
 func TestCheckTamperExitOne(t *testing.T) {
 	// not parallel: t.Setenv/Chdir in harness
 	dir := t.TempDir()

@@ -24,7 +24,7 @@ func newWatchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			base, err := r.store.Load(r.cfg.Baseline)
+			base, err := r.loadBaseline()
 			if err != nil {
 				return err
 			}
