@@ -280,6 +280,29 @@ func FuzzLoad(f *testing.F) {
 	})
 }
 
+// TestTrailingGarbageRejected verifies a baseline with valid JSON followed
+// by trailing non-whitespace bytes is rejected (the HMAC must cover the
+// whole file; appended bytes must not be silently ignored).
+func TestTrailingGarbageRejected(t *testing.T) {
+	t.Parallel()
+	st, _ := New(testKey())
+	path := filepath.Join(t.TempDir(), "b.json")
+	if err := st.Save(path, sampleBaseline(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	for _, tail := range []string{"GARBAGE", "\x00\x01\x02"} {
+		mut := append(append([]byte{}, raw...), []byte(tail)...)
+		mutPath := filepath.Join(t.TempDir(), "b-trailing.json")
+		if err := os.WriteFile(mutPath, mut, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.Load(mutPath); err == nil {
+			t.Fatalf("expected rejection of trailing %q bytes", tail)
+		}
+	}
+}
+
 // TestSaveCreatesMissingParentDir verifies Save creates the baseline's
 // parent directory (0700) instead of failing when it does not exist.
 func TestSaveCreatesMissingParentDir(t *testing.T) {

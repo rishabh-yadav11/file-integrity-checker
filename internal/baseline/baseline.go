@@ -138,6 +138,12 @@ func (s *Store) Load(path string) (model.Baseline, error) {
 	if err := dec.Decode(&d); err != nil {
 		return model.Baseline{}, fmt.Errorf("baseline: parse %s: %w", path, err)
 	}
+	// A valid HMAC must cover the entire file: reject any non-whitespace
+	// trailing content after the JSON document (attacker appending bytes
+	// that the decoder would otherwise ignore).
+	if dec.More() {
+		return model.Baseline{}, fmt.Errorf("baseline: parse %s: trailing data after JSON document", path)
+	}
 	want := s.computeMAC(d.signedDoc)
 	if want == "" || !hmac.Equal([]byte(want), []byte(d.HMAC)) {
 		return model.Baseline{}, ErrTampered
