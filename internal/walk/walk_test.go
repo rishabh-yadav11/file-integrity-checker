@@ -280,6 +280,55 @@ func TestOptionsDiffIgnoreMtime(t *testing.T) {
 	}
 }
 
+// TestScanSymlinkOutsideRoot verifies a symlink whose target lies outside
+// the tree is recorded (target string) but never followed or hashed.
+func TestScanSymlinkOutsideRoot(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.log")
+	if err := os.WriteFile(outside, []byte("top-secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.log"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "link-out")); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := Scan(root, Options{Algo: model.AlgoSHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var link *model.Entry
+	for i := range entries {
+		if entries[i].Path == "link-out" {
+			link = &entries[i]
+		}
+	}
+	if link == nil {
+		t.Fatalf("outside symlink not recorded: %v", entries)
+	}
+	if link.Hash != "" {
+		t.Errorf("outside symlink must not be followed/hashed, got %q", link.Hash)
+	}
+	if link.LinkTarget != outside {
+		t.Errorf("link target = %q, want %q", link.LinkTarget, outside)
+	}
+}
+
+// TestScanEmptyDir verifies scanning an empty directory yields no entries
+// and no error.
+func TestScanEmptyDir(t *testing.T) {
+	t.Parallel()
+	entries, err := Scan(t.TempDir(), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("empty dir scan returned %d entries, want 0", len(entries))
+	}
+}
+
 func TestSkip(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
