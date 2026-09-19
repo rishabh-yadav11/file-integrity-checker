@@ -71,9 +71,6 @@ func (s *Store) computeMAC(d signedDoc) string {
 
 // Save writes b to path atomically with 0600 permissions and an HMAC tag.
 func (s *Store) Save(path string, b model.Baseline) error {
-	if len(b.Entries) == 0 {
-		return fmt.Errorf("baseline: refusing to save empty baseline")
-	}
 	sd := signedDoc{
 		Version:   b.Version,
 		Algorithm: b.Algorithm,

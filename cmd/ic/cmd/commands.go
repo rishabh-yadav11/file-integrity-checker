@@ -29,6 +29,10 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if len(entries) == 0 {
+				r.log.Warn("no files found; writing an empty baseline - nothing will be monitored until new files appear",
+					slog.String("path", args[0]))
+			}
 			abs, err := filepath.Abs(args[0])
 			if err != nil {
 				return err

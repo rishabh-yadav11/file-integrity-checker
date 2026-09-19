@@ -192,13 +192,14 @@ func TestEmptyKeyRejected(t *testing.T) {
 	}
 }
 
-func TestEmptyEntriesRejected(t *testing.T) {
+func TestSaveAllowsEmpty(t *testing.T) {
 	t.Parallel()
 	st, _ := New(testKey())
 	b := sampleBaseline(time.Now())
 	b.Entries = nil
-	if err := st.Save(filepath.Join(t.TempDir(), "b.json"), b); err == nil {
-		t.Fatal("expected error saving empty baseline")
+	// An empty baseline is valid (e.g. initializing an empty directory).
+	if err := st.Save(filepath.Join(t.TempDir(), "b.json"), b); err != nil {
+		t.Fatalf("saving empty baseline: %v", err)
 	}
 }
 

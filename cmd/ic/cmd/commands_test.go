@@ -177,6 +177,30 @@ func TestUpdatePrunesDeletedFiles(t *testing.T) {
 	}
 }
 
+// TestEmptyDirInitAllowed verifies init on an empty directory succeeds
+// with a warning (previously refused), and the resulting empty baseline
+// checks clean.
+func TestEmptyDirInitAllowed(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	code, out := runCLIIn(t, dir, dir, env, "init", "empty", "--baseline", "b.json")
+	if code != ExitOK {
+		t.Fatalf("empty-dir init = %d, want 0:\n%s", code, out)
+	}
+	if !contains(out, "empty baseline") {
+		t.Fatalf("expected a warning on empty-dir init, got: %s", out)
+	}
+	code, out = runCLIIn(t, dir, dir, env, "check", "empty", "--baseline", "b.json")
+	if code != ExitOK {
+		t.Fatalf("check of empty baseline = %d, want 0:\n%s", code, out)
+	}
+}
+
 func TestCheckTamperExitOne(t *testing.T) {
 	// not parallel: t.Setenv/Chdir in harness
 	dir := t.TempDir()
