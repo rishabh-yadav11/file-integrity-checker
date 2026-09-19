@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 )
 
@@ -139,6 +140,11 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Baseline == "" {
 		return fmt.Errorf("config: baseline path must not be empty")
+	}
+	for _, pat := range append(append([]string{}, cfg.Include...), cfg.Exclude...) {
+		if !doublestar.ValidatePattern(pat) {
+			return fmt.Errorf("config: invalid glob %q", pat)
+		}
 	}
 	return nil
 }

@@ -125,7 +125,9 @@ func Run(ctx context.Context, cfg Config) error {
 			// Track newly created directories so their children are watched too.
 			if ev.Op&fsnotify.Create != 0 {
 				if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-					_ = watcher.Add(ev.Name)
+					if err := watcher.Add(ev.Name); err != nil {
+						cfg.Log.Warn("failed to watch new directory", slog.String("path", ev.Name), slog.String("err", err.Error()))
+					}
 				}
 			}
 			// Handle rename/remove as events on the old path.
@@ -144,7 +146,7 @@ func Run(ctx context.Context, cfg Config) error {
 func watchRecursive(w *fsnotify.Watcher, root string, opts walk.Options) error {
 	return filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // unreadable: skip
+			return err // unreadable directory: surface instead of ignoring
 		}
 		if !d.IsDir() {
 			return nil

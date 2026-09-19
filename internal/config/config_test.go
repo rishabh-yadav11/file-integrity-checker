@@ -130,6 +130,8 @@ func TestValidateErrors(t *testing.T) {
 		{"bad algo", func(c *Config) { c.Algorithm = "md5" }},
 		{"neg workers", func(c *Config) { c.Workers = -1 }},
 		{"empty baseline", func(c *Config) { c.Baseline = "" }},
+		{"invalid include glob", func(c *Config) { c.Include = []string{"[unclosed"} }},
+		{"invalid exclude glob", func(c *Config) { c.Exclude = []string{"a/**/b["} }},
 	}
 	for _, tt := range tests {
 		tt := tt
