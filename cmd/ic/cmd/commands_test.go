@@ -97,6 +97,53 @@ func TestBaselineInsideTreeSelfExcluded(t *testing.T) {
 	}
 }
 
+// TestUnreadableFileExitsError verifies that a file which cannot be read
+// (e.g. permission denied) fails init and check with exit 2 and an error
+// that names the file, rather than silently dropping it at init or
+// misreporting it as MISSING at check.
+func TestUnreadableFileExitsError(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(logs, "secret.log")
+	if err := os.WriteFile(secret, []byte("S"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+
+	// Baseline while everything is readable, then lock one file down.
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("baseline init: %d %s", code, out)
+	}
+	if err := os.Chmod(secret, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.Open(secret); err == nil {
+		f.Close()
+		t.Skip("running as root; permission checks are ineffective")
+	}
+	t.Cleanup(func() { _ = os.Chmod(secret, 0o600) })
+
+	// check must exit 2 and name the file, not report MISSING.
+	code, out := runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", bl)
+	if code != ExitError {
+		t.Fatalf("check with unreadable file = %d, want 2:\n%s", code, out)
+	}
+	if !strings.Contains(out, "secret.log") {
+		t.Fatalf("check error must name the file:\n%s", out)
+	}
+	if strings.Contains(out, "MISSING") {
+		t.Fatalf("unreadable file must not be reported as MISSING:\n%s", out)
+	}
+}
+
 func TestCheckTamperExitOne(t *testing.T) {
 	// not parallel: t.Setenv/Chdir in harness
 	dir := t.TempDir()

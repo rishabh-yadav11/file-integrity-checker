@@ -150,6 +150,19 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 			collect(e)
 		}
 	}()
+	// Drain per-file hash errors (bounded channel) so a worker that hits
+	// an unreadable file does not block, and its failure is surfaced to
+	// the caller instead of silently dropping the file.
+	var errWG sync.WaitGroup
+	errWG.Add(1)
+	go func() {
+		defer errWG.Done()
+		for e := range pool.Errors() {
+			mu.Lock()
+			errs = append(errs, e)
+			mu.Unlock()
+		}
+	}()
 
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -205,6 +218,7 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 	pool.Close()
 	pool.Wait()    // workers done; closes results and errors channels
 	drainWG.Wait() // collector has seen every result
+	errWG.Wait()   // per-file hash errors collected
 
 	if len(errs) > 0 {
 		return entriesToSlice(entries), errs[0]
