@@ -70,6 +70,33 @@ func TestFullWorkflow(t *testing.T) {
 	}
 }
 
+// TestBaselineInsideTreeSelfExcluded verifies that a baseline stored
+// inside the tree it describes is auto-excluded from scans, so
+// `init .` then `check .` exit 0 instead of flagging the baseline as NEW.
+func TestBaselineInsideTreeSelfExcluded(t *testing.T) {
+	// not parallel: t.Setenv/Chdir in harness
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", "logs/b.json")
+	if code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if !contains(out, "baseline is inside the watched tree") {
+		t.Fatalf("expected self-referential warning, got: %s", out)
+	}
+	code, out = runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", "logs/b.json")
+	if code != ExitOK {
+		t.Fatalf("check after in-tree init = %d, want 0 (baseline must not flag itself):\n%s", code, out)
+	}
+}
+
 func TestCheckTamperExitOne(t *testing.T) {
 	// not parallel: t.Setenv/Chdir in harness
 	dir := t.TempDir()

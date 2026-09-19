@@ -149,12 +149,18 @@ func resolveKey(cfg config.Config) ([]byte, error) {
 }
 
 func (r *runtime) scanOpts() walk.Options {
-	return walk.Options{
+	opts := walk.Options{
 		Algo:    r.algo,
 		Include: r.cfg.Include,
 		Exclude: r.cfg.Exclude,
 		Workers: r.cfg.Workers,
 	}
+	// Auto-exclude the baseline file itself so a baseline stored inside
+	// the tree it describes never flags its own path as new/modified.
+	if abs, err := filepath.Abs(r.cfg.Baseline); err == nil {
+		opts.ExcludePaths = append(opts.ExcludePaths, abs)
+	}
+	return opts
 }
 
 // scan hashes a path that may be a single file or a directory.

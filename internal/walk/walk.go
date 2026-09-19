@@ -24,6 +24,29 @@ type Options struct {
 	Include []string // glob patterns (relative, slash-separated); empty = all
 	Exclude []string // glob patterns to skip (checked on dir and file paths)
 	Workers int      // hashing pool size; 0 = NumCPU
+	// ExcludePaths lists absolute paths skipped verbatim during the
+	// walk (no globbing). Used to keep a baseline stored inside the
+	// tree it describes from flagging itself as new/modified.
+	ExcludePaths []string
+}
+
+// excludeAbs reports whether absolute path p matches any ExcludePaths
+// entry (compared after cleaning).
+func (o Options) excludeAbs(p string) bool {
+	if len(o.ExcludePaths) == 0 {
+		return false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return false
+	}
+	abs = filepath.Clean(abs)
+	for _, e := range o.ExcludePaths {
+		if filepath.Clean(e) == abs {
+			return true
+		}
+	}
+	return false
 }
 
 // excludedBy reports whether relPath matches any Exclude pattern.
@@ -160,6 +183,9 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 			return nil // sockets, devices, FIFOs: out of scope
 		}
 		if opts.Skip(relSlash, false) {
+			return nil
+		}
+		if opts.excludeAbs(path) {
 			return nil
 		}
 		entry, err := StatEntry(path, relSlash)
