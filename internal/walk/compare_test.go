@@ -228,6 +228,71 @@ func TestCompareSingleFile(t *testing.T) {
 // versions of `init <file>`, which stored Root as the file itself and
 // entries by base name. Check of that file must still resolve the
 // entry (parent becomes the effective root) instead of reporting ".".
+// TestCompareOutsideRootRejected verifies comparing a path that is not
+// within the baseline's stored root fails with a clear error rather than
+// producing a meaningless NEW/MISSING dump.
+func TestCompareOutsideRootRejected(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Root: root, Entries: mustScan(t, root, opts)}
+	other := t.TempDir()
+	if _, err := Compare(other, base, opts); err == nil || !strings.Contains(err.Error(), "outside baseline root") {
+		t.Fatalf("outside-root compare error = %v, want clear outside-root error", err)
+	}
+}
+
+// TestCompareSubdirScopes verifies checking a subdirectory of the
+// baseline root maps results onto baseline-relative paths (no
+// contradictory NEW + MISSING for the same files).
+func TestCompareSubdirScopes(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Root: root, Entries: mustScan(t, root, opts)}
+	results, err := Compare(filepath.Join(root, "sub"), base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("subdir check returned %d results (%+v), want 2", len(results), results)
+	}
+	want := map[string]bool{"sub/c.log": false, "sub/deep/d.log": false}
+	for _, r := range results {
+		if _, ok := want[r.Path]; !ok {
+			t.Fatalf("unexpected scoped result path %q in %+v", r.Path, results)
+		}
+		want[r.Path] = true
+		if r.Kind != model.KindUnmodified {
+			t.Errorf("scoped result %s = %s, want unmodified", r.Path, r.Kind)
+		}
+	}
+	for p, seen := range want {
+		if !seen {
+			t.Errorf("missing scoped result for %s", p)
+		}
+	}
+}
+
+// TestCompareDeletedSingleFileMissing verifies a deleted single-file
+// target reports MISSING (not an error).
+func TestCompareDeletedSingleFileMissing(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Root: root, Entries: mustScan(t, root, opts)}
+	if err := os.Remove(filepath.Join(root, "a.log")); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Compare(filepath.Join(root, "a.log"), base, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Path != "a.log" || results[0].Kind != model.KindMissing {
+		t.Fatalf("deleted single-file results = %+v, want one MISSING a.log", results)
+	}
+}
+
 func TestCompareSingleFileLegacyRoot(t *testing.T) {
 	t.Parallel()
 	root := makeTree(t)

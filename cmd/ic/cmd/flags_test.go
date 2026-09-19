@@ -136,10 +136,10 @@ func TestUpdateSingleFilePreservesSiblings(t *testing.T) {
 	}
 }
 
-// TestCheckOtherRootDeterministic verifies check against a path that is
-// not the baseline's root still works (exit 1, files reported as
-// foreign) instead of crashing or silently passing.
-func TestCheckOtherRootDeterministic(t *testing.T) {
+// TestCheckWrongRootRejected verifies check against a path outside the
+// baseline's root fails with exit 2 and a clear message instead of
+// producing a meaningless flood of NEW/MISSING lines.
+func TestCheckWrongRootRejected(t *testing.T) {
 	dir := t.TempDir()
 	logs := filepath.Join(dir, "logs")
 	if err := os.MkdirAll(logs, 0o755); err != nil {
@@ -153,11 +153,15 @@ func TestCheckOtherRootDeterministic(t *testing.T) {
 		"init", logs, "--baseline", bl); code != ExitOK {
 		t.Fatalf("init: %d %s", code, out)
 	}
-	// check against a DIFFERENT directory (dir itself): entry paths cannot match.
+	// check against dir (an ancestor that is NOT the baseline root) must
+	// be rejected, not silently compared as foreign files.
 	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
 		"check", dir, "--baseline", bl)
-	if code != ExitChanges {
-		t.Fatalf("cross-root check = %d, want 1 (everything foreign):\n%s", code, out)
+	if code != ExitError {
+		t.Fatalf("cross-root check = %d, want 2:\n%s", code, out)
+	}
+	if !strings.Contains(out, "outside baseline root") {
+		t.Fatalf("cross-root error must be clear:\n%s", out)
 	}
 }
 
