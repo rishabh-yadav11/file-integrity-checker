@@ -4,4 +4,6 @@ coverage.out
 *.tmp
 *.key
 baseline-*.json
+*.baseline.json
+baseline.json
 integrity-baseline.json

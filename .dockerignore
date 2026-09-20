@@ -5,6 +5,9 @@ dist/
 coverage.out
 *.log
 *.tmp
+*.key
+baseline*.json
+integrity-baseline.json
 docs/
 Dockerfile
 .dockerignore

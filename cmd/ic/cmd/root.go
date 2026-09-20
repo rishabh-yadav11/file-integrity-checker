@@ -20,7 +20,7 @@ var errChangesFound = fmt.Errorf("changes found")
 
 var cfgPath string
 
-// Version is set at build time via -ldflags "-X main.version=...".
+// Version is set at build time via -ldflags "-X github.com/rishabh-yadav11/file-integrity-checker/cmd/ic/cmd.version=...".
 var version = "dev"
 
 // NewRootCommand builds the full command tree.

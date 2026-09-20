@@ -112,16 +112,18 @@ whole document.
 
 | Flag | Meaning |
 | --- | --- |
+| `--config <path>` | YAML config file (default `~/.config/integrity-check/config.yaml`) |
 | `--baseline <path>` | baseline file (required unless set in config) |
 | `--algo <name>` | `sha256` (default), `sha512`, `blake2b`; `check` defaults to the baseline's stored algorithm when omitted, an explicit different value fails the run |
 | `--format text|json` | output format; `watch` always emits one JSON line per event regardless of this flag |
+| `--color` | colorize output (default: on only for a tty; `NO_COLOR` forces off) |
 | `-q` / `--quiet` | hide unmodified lines; on a clean tree print nothing at all (CI/cron friendly, exit code still 0/1/2) |
 | `--include` / `--exclude` | glob filters, repeatable (validated at load) |
 | `--workers N` | hashing workers (0 = NumCPU) |
 | `--keyfile <path>` | HMAC key file (else `IC_KEY` env) |
 | `--allow-loose-keyfile` | permit a group/world-readable keyfile (default: refuse) |
 | `--webhook <url>` | POST tamper alerts as JSON (watch) |
-| `--debounce 500ms` | watch-mode event coalescing window |
+| `--debounce 500ms` | watch-only: event coalescing window for `watch` |
 | `--follow-symlinks` | follow symlinks and hash their targets (default: record the link target, never follow) |
 | `--ignore-mtime` | compare content (hash) only, ignoring size/mode/owner/mtime |
 

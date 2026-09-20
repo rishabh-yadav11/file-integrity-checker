@@ -26,6 +26,7 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Format check
+        shell: bash
         run: test -z "$(gofmt -l .)"
       - name: Unit tests with race detector
         run: go test -race ./... -timeout 10m
@@ -52,7 +53,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          version: v1.63.4
 
   bench-smoke:
     runs-on: ubuntu-latest
