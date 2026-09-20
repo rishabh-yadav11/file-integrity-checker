@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
-
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/config"
 )
 
@@ -298,42 +296,54 @@ func TestInitWarnsBaselineInsideTree(t *testing.T) {
 	}
 }
 
-// TestColorHelpers exercises the color-precedence rules (L8): NO_COLOR
-// wins, then an explicit --color flag (true or false), then the config
-// value, then the tty default.
+// TestColorHelpers exercises the color-precedence rules (L8/Q2): NO_COLOR
+// wins, then the resolved config color (flag or config file), then the
+// tty default.
 func TestColorHelpers(t *testing.T) {
+	on, off := true, false
 	t.Setenv("NO_COLOR", "1")
-	if isatty() {
-		t.Fatal("NO_COLOR must disable the tty default")
-	}
-	if resolveColor(true, true, config.Config{}) {
-		t.Fatal("NO_COLOR must win over --color=true (L8)")
+	if resolveColor(config.Config{Color: &on}) {
+		t.Fatal("NO_COLOR must win over an explicit color=true (L8)")
 	}
 	t.Setenv("NO_COLOR", "")
-	if !resolveColor(true, true, config.Config{}) {
-		t.Fatal("explicit --color=true must win")
+	if !resolveColor(config.Config{Color: &on}) {
+		t.Fatal("resolved color=true must win")
 	}
-	if resolveColor(true, false, config.Config{}) {
-		t.Fatal("explicit --color=false must force color off (L8)")
+	if resolveColor(config.Config{Color: &off}) {
+		t.Fatal("resolved color=false must force color off")
 	}
-	on := true
-	if !resolveColor(false, false, config.Config{Color: &on}) {
-		t.Fatal("config color=true must apply when the flag is unset")
+	if resolveColor(config.Config{}) != isatty() {
+		t.Fatal("nil color must fall back to the tty default")
 	}
-	off := false
-	if resolveColor(false, false, config.Config{Color: &off}) {
-		t.Fatal("config color=false must apply when the flag is unset")
+	if isatty() { // NO_COLOR was cleared above
+		t.Log("tty default on; NO_COLOR case exercised separately")
 	}
-	c := &cobra.Command{}
-	c.Flags().Bool("color", false, "")
-	if cmdColorSet(c, "color") {
-		t.Fatal("unset color flag must not read as 'set'")
-	}
-	if err := c.Flags().Set("color", "true"); err != nil {
+}
+
+// TestColorFlagPrecedenceCLI verifies end-to-end that --color=true emits
+// ANSI even on a non-tty, and that NO_COLOR overrides it.
+func TestColorFlagPrecedenceCLI(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if !cmdColorSet(c, "color") || !cmdColorVal(c, "color") {
-		t.Fatal("color flag set true must read as set+true")
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"}, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	_, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k", "NO_COLOR": ""},
+		"check", "logs", "--baseline", bl, "--color=true")
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("--color=true must emit ANSI on a non-tty:\n%s", out)
+	}
+	_, out = runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k", "NO_COLOR": "1"},
+		"check", "logs", "--baseline", bl, "--color=true")
+	if strings.Contains(out, "\x1b[") {
+		t.Fatalf("NO_COLOR must override --color=true:\n%s", out)
 	}
 }
 

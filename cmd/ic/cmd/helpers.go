@@ -29,31 +29,17 @@ func isatty() bool {
 }
 
 // resolveColor computes the effective color setting. Precedence (L8):
-// NO_COLOR forces it off; then an explicitly-set --color flag (true or
-// false) wins; then the config file value; then the tty default.
-func resolveColor(flagSet, flagVal bool, cfg config.Config) bool {
+// NO_COLOR forces it off; then the resolved config value; then the tty
+// default. The config value already folds an explicit --color flag in via
+// flagsToOverrides, so there is no separate flag re-read here (Q2).
+func resolveColor(cfg config.Config) bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
-	}
-	if flagSet {
-		return flagVal
 	}
 	if cfg.Color != nil {
 		return *cfg.Color
 	}
 	return isatty()
-}
-
-// cmdColorSet reports whether the --color flag was explicitly changed.
-func cmdColorSet(cmd *cobra.Command, name string) bool {
-	f := cmd.Flags().Lookup(name)
-	return f != nil && f.Changed
-}
-
-// cmdColorVal returns the --color flag's current value.
-func cmdColorVal(cmd *cobra.Command, name string) bool {
-	v, _ := cmd.Flags().GetBool(name)
-	return v
 }
 
 // loadConfigFor resolves the effective config for a command.
