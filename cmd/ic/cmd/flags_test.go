@@ -298,35 +298,42 @@ func TestInitWarnsBaselineInsideTree(t *testing.T) {
 	}
 }
 
-// TestColorHelpers exercises the color-precedence helpers: NO_COLOR
-// disables the tty default, an explicit color flag wins, and an unset
-// flag falls back to the config value.
+// TestColorHelpers exercises the color-precedence rules (L8): NO_COLOR
+// wins, then an explicit --color flag (true or false), then the config
+// value, then the tty default.
 func TestColorHelpers(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	if isatty() {
-		t.Fatal("NO_COLOR must disable tty color default")
+		t.Fatal("NO_COLOR must disable the tty default")
 	}
-	if !colorBool(true, config.Config{}) {
-		t.Fatal("explicit color=true must win")
+	if resolveColor(true, true, config.Config{}) {
+		t.Fatal("NO_COLOR must win over --color=true (L8)")
+	}
+	t.Setenv("NO_COLOR", "")
+	if !resolveColor(true, true, config.Config{}) {
+		t.Fatal("explicit --color=true must win")
+	}
+	if resolveColor(true, false, config.Config{}) {
+		t.Fatal("explicit --color=false must force color off (L8)")
 	}
 	on := true
-	if !colorBool(false, config.Config{Color: &on}) {
+	if !resolveColor(false, false, config.Config{Color: &on}) {
 		t.Fatal("config color=true must apply when the flag is unset")
 	}
 	off := false
-	if colorBool(false, config.Config{Color: &off}) {
+	if resolveColor(false, false, config.Config{Color: &off}) {
 		t.Fatal("config color=false must apply when the flag is unset")
 	}
 	c := &cobra.Command{}
 	c.Flags().Bool("color", false, "")
-	if cmdColor(c, "color") {
-		t.Fatal("unset color flag must read false")
+	if cmdColorSet(c, "color") {
+		t.Fatal("unset color flag must not read as 'set'")
 	}
 	if err := c.Flags().Set("color", "true"); err != nil {
 		t.Fatal(err)
 	}
-	if !cmdColor(c, "color") {
-		t.Fatal("color flag set true must read true")
+	if !cmdColorSet(c, "color") || !cmdColorVal(c, "color") {
+		t.Fatal("color flag set true must read as set+true")
 	}
 }
 

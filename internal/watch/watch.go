@@ -98,28 +98,55 @@ func Run(ctx context.Context, cfg Config) error {
 	// so index the baseline once up front instead of rebuilding an
 	// O(entries) map (or linear scan) for every event burst.
 	baseByPath := baseIndex(cfg.Baseline)
-	// Debounce: coalesce bursts of fs events per path.
+	// Debounce: coalesce bursts of fs events per path. A one-shot timer
+	// is armed only while work is pending and stopped when the queue is
+	// empty, instead of a 50ms ticker looping forever (L4).
 	go func() {
-		ticker := time.NewTicker(50 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-flushCh:
-			case <-ticker.C:
-			}
+		// processReady fires every path whose debounce window has elapsed
+		// and returns the wait to the next deadline (0 = nothing pending).
+		processReady := func() time.Duration {
+			now := time.Now()
 			mu.Lock()
 			ready := make([]string, 0, len(pending))
 			for p, t := range pending {
-				if time.Since(t) >= cfg.Debounce {
+				if now.Sub(t) >= cfg.Debounce {
 					ready = append(ready, p)
 					delete(pending, p)
+				}
+			}
+			var wait time.Duration
+			for _, t := range pending {
+				if w := cfg.Debounce - now.Sub(t); w > wait {
+					wait = w
 				}
 			}
 			mu.Unlock()
 			for _, p := range ready {
 				handleEvent(ctx, cfg, baseByPath, p)
+			}
+			return wait
+		}
+		for {
+			wait := processReady()
+			if wait <= 0 {
+				// Nothing pending: block until a new event or shutdown.
+				select {
+				case <-ctx.Done():
+					return
+				case <-flushCh:
+				}
+				continue
+			}
+			// Something pending: sleep until its deadline or a newer
+			// event (which may extend it), whichever comes first.
+			timer := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-flushCh:
+				timer.Stop()
+			case <-timer.C:
 			}
 		}
 	}()

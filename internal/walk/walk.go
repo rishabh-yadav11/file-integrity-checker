@@ -51,7 +51,7 @@ func (o Options) Diff(cur, old model.Entry) []string {
 		}
 		return nil
 	}
-	return Diff(cur, old)
+	return DiffEntries(cur, old)
 }
 
 // excludeAbs reports whether absolute path p matches any ExcludePaths
@@ -263,11 +263,16 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 			if opts.FollowSymlinks {
 				// Resolve the link to its real target and hash that
 				// (hashing never follows links itself). Target must be
-				// a regular file; otherwise record the link only.
+				// a regular file; otherwise record the link only. Hashing
+				// a target outside the root bridges two trees, so warn
+				// when the scan is about to read outside it (L12).
 				if real, realErr := filepath.EvalSymlinks(path); realErr == nil {
 					if fi, statErr := os.Stat(real); statErr == nil && fi.Mode().IsRegular() {
 						if opts.Skip(relSlash, false) {
 							return nil
+						}
+						if opts.Warn != nil && !isWithin(real, root) {
+							opts.Warn("following symlink %s to %s outside the scan root", path, real)
 						}
 						pool.Submit(hash.Job{Path: real, Entry: link})
 						return nil
@@ -305,6 +310,10 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 	if walkErr != nil {
 		pool.Close()
 		pool.Wait()
+		// Drain the collectors too so no goroutine is left running behind
+		// the error return (L5).
+		drainWG.Wait()
+		errWG.Wait()
 		return nil, walkErr
 	}
 

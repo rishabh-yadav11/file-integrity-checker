@@ -272,8 +272,10 @@ func deletedReport(root string, base model.Baseline, baseRoot string) *model.Res
 	return nil
 }
 
-// Diff lists the metadata fields that differ between baseline and current.
-func Diff(cur, old model.Entry) []string {
+// DiffEntries lists the metadata fields that differ between baseline and
+// current (package-level; Options.Diff is the guard method that honors
+// IgnoreMtime) (L14).
+func DiffEntries(cur, old model.Entry) []string {
 	var reasons []string
 	if !hmac.Equal([]byte(cur.Hash), []byte(old.Hash)) {
 		reasons = append(reasons, "hash")

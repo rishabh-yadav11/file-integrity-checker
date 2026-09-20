@@ -389,3 +389,23 @@ func TestSaveSweepsStaleTemp(t *testing.T) {
 		t.Fatalf("baseline not written after sweep: %v", err)
 	}
 }
+
+// TestWrongKeyMessageMentionsWrongKey verifies a baseline loaded with the
+// wrong key fails with a message that names the wrong-key possibility
+// rather than only "tampered" (L3).
+func TestWrongKeyMessageMentionsWrongKey(t *testing.T) {
+	t.Parallel()
+	st, _ := New(testKey())
+	path := filepath.Join(t.TempDir(), "b.json")
+	if err := st.Save(path, sampleBaseline(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := New([]byte("different-key"))
+	_, err := other.Load(path)
+	if err == nil {
+		t.Fatal("wrong key must fail verification")
+	}
+	if !strings.Contains(err.Error(), "wrong key") {
+		t.Fatalf("wrong-key error must mention 'wrong key': %v", err)
+	}
+}

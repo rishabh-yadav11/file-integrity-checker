@@ -116,24 +116,26 @@ func (s *Store) Save(path string, b model.Baseline) error {
 	}
 	tmp, err := os.CreateTemp(dir, ".baseline-*.tmp")
 	if err != nil {
-		return err
+		return fmt.Errorf("baseline: create temp in %s: %w", dir, err)
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }() // no-op after successful rename
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
-		return err
+		return fmt.Errorf("baseline: chmod %s: %w", tmpName, err)
 	}
 	if _, err := tmp.Write(payload); err != nil {
 		_ = tmp.Close()
-		return err
+		// The raw error omits which temp file failed; name it and hint at
+		// the usual cause (L10).
+		return fmt.Errorf("baseline: write %s: %w (disk full?)", tmpName, err)
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return err
+		return fmt.Errorf("baseline: sync %s: %w (disk full?)", tmpName, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return fmt.Errorf("baseline: close %s: %w", tmpName, err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		return err
@@ -146,8 +148,10 @@ func (s *Store) Save(path string, b model.Baseline) error {
 	return nil
 }
 
-// ErrTampered is returned when the baseline HMAC does not verify.
-var ErrTampered = errors.New("baseline: HMAC verification failed (baseline may be tampered)")
+// ErrTampered is returned when the baseline HMAC does not verify. A
+// mismatch means either the baseline was tampered with or the wrong key
+// is in use, so the message says both (L3).
+var ErrTampered = errors.New("baseline: HMAC verification failed (wrong key, or baseline tampered)")
 
 // nextSequence reads the currently-stored baseline's sequence (verifying
 // its HMAC with this store's key) so successive saves are monotonic. A

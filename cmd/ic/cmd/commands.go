@@ -119,7 +119,7 @@ func newCheckCmd() *cobra.Command {
 			}
 			co := report.Options{
 				Format: r.cfg.Format,
-				Color:  colorBool(cmdColor(c, "color"), r.cfg),
+				Color:  resolveColor(cmdColorSet(c, "color"), cmdColorVal(c, "color"), r.cfg),
 				Quiet:  r.cfg.Quiet,
 			}
 			if err := report.Render(stdout(), results, co); err != nil {

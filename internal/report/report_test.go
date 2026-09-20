@@ -170,3 +170,39 @@ func TestRenderJSONDoesNotEscapeArrow(t *testing.T) {
 		t.Fatalf("expected raw \"3 -> 9\" in JSON output: %s", out)
 	}
 }
+
+// TestRenderJSONSummaryAndQuiet verifies the JSON envelope carries the
+// aggregate summary counts (L9) and that -q omits Unmodified results
+// while keeping the full summary (L7).
+func TestRenderJSONSummaryAndQuiet(t *testing.T) {
+	t.Parallel()
+	results := sampleResults()
+	var sb strings.Builder
+	if err := Render(&sb, results, Options{Format: "json"}); err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Results []model.Result `json:"results"`
+		Summary Summary        `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(sb.String()), &env); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, sb.String())
+	}
+	if env.Summary.Unmodified != 1 || env.Summary.Modified != 1 || env.Summary.New != 1 || env.Summary.Missing != 1 {
+		t.Fatalf("json summary = %+v, want 1/1/1/1", env.Summary)
+	}
+
+	var qb strings.Builder
+	if err := Render(&qb, results, Options{Format: "json", Quiet: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(qb.String()), &env); err != nil {
+		t.Fatalf("invalid quiet json: %v\n%s", err, qb.String())
+	}
+	if len(env.Results) != 3 {
+		t.Fatalf("quiet json results = %d, want 3 (unmodified omitted, L7)", len(env.Results))
+	}
+	if env.Summary.Unmodified != 1 {
+		t.Fatalf("quiet json summary must keep full unmodified count, got %d", env.Summary.Unmodified)
+	}
+}

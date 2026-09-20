@@ -74,20 +74,38 @@ func Render(w io.Writer, results []model.Result, opts Options) error {
 	copy(sorted, results)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
 	if opts.Format == "json" {
-		return renderJSON(w, sorted)
+		return renderJSON(w, sorted, opts)
 	}
 	return renderText(w, sorted, opts)
 }
 
-func renderJSON(w io.Writer, results []model.Result) error {
+func renderJSON(w io.Writer, sorted []model.Result, opts Options) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	// Reasons carry "->" (e.g. "size 3 -> 9"); the default encoder escapes
 	// '>' and '<' to \u003e/\u003c, corrupting the diff text (M6).
 	enc.SetEscapeHTML(false)
+	// One envelope for every command: results plus the aggregate counts
+	// (check reports them; init/update/verify report the same shape with
+	// their own fields) (L9). The summary always reflects the full scan,
+	// matching the text summary line.
+	summary := Count(sorted)
+	shown := sorted
+	if opts.Quiet {
+		// -q means "hide unmodified lines"; in JSON that is omitting the
+		// Unmodified results, keeping the output machine-consumable (L7).
+		filtered := make([]model.Result, 0, len(sorted))
+		for _, r := range sorted {
+			if r.Kind != model.KindUnmodified {
+				filtered = append(filtered, r)
+			}
+		}
+		shown = filtered
+	}
 	return enc.Encode(struct {
 		Results []model.Result `json:"results"`
-	}{Results: results})
+		Summary Summary        `json:"summary"`
+	}{Results: shown, Summary: summary})
 }
 
 func renderText(w io.Writer, results []model.Result, opts Options) error {

@@ -28,14 +28,32 @@ func isatty() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-func colorBool(flagColor bool, cfg config.Config) bool {
-	if flagColor {
-		return true
+// resolveColor computes the effective color setting. Precedence (L8):
+// NO_COLOR forces it off; then an explicitly-set --color flag (true or
+// false) wins; then the config file value; then the tty default.
+func resolveColor(flagSet, flagVal bool, cfg config.Config) bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if flagSet {
+		return flagVal
 	}
 	if cfg.Color != nil {
 		return *cfg.Color
 	}
 	return isatty()
+}
+
+// cmdColorSet reports whether the --color flag was explicitly changed.
+func cmdColorSet(cmd *cobra.Command, name string) bool {
+	f := cmd.Flags().Lookup(name)
+	return f != nil && f.Changed
+}
+
+// cmdColorVal returns the --color flag's current value.
+func cmdColorVal(cmd *cobra.Command, name string) bool {
+	v, _ := cmd.Flags().GetBool(name)
+	return v
 }
 
 // loadConfigFor resolves the effective config for a command.
@@ -262,16 +280,6 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 	e.Hash = sum
 	e.Algorithm = r.algo
 	return []model.Entry{*e}, nil
-}
-
-// cmdColor returns the changed state of a bool flag (false if unset).
-func cmdColor(cmd *cobra.Command, name string) bool {
-	f := cmd.Flags().Lookup(name)
-	if f == nil || !f.Changed {
-		return false
-	}
-	v, _ := cmd.Flags().GetBool(name)
-	return v
 }
 
 // stdout returns the standard output writer (indirected for tests).

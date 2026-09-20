@@ -35,7 +35,10 @@ type Config struct {
 	IgnoreMtime bool `yaml:"ignore_mtime"`
 }
 
-// Default returns the built-in defaults.
+// Default returns the built-in defaults. The default Baseline path is
+// relative to the current working directory; use an absolute value (in
+// --baseline or config `baseline:`) for a stable location regardless of
+// where the command runs (L2).
 func Default() Config {
 	return Config{
 		Baseline:  "integrity-baseline.json",

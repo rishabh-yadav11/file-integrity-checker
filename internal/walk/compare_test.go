@@ -132,7 +132,7 @@ func TestDiffReasons(t *testing.T) {
 			t.Parallel()
 			cur := old
 			tt.mut(&cur)
-			reasons := Diff(cur, old)
+			reasons := DiffEntries(cur, old)
 			if tt.wantNone {
 				if len(reasons) != 0 {
 					t.Fatalf("expected no reasons, got %v", reasons)

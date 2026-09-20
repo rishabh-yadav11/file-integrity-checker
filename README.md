@@ -60,7 +60,10 @@ integrity-check watch /var/log/myapp --baseline "$BL" --webhook https://hooks.ex
 One baseline path (`$BL`) is used by every command. Keep the baseline (and
 the HMAC key) on a different host or offline media from the files it
 describes, and never store it inside the tree it monitors — `init` warns
-if you do and auto-excludes the in-tree baseline from its own scans.
+if you do and auto-excludes the in-tree baseline from its own scans. If
+you do not pass `--baseline`, the default path `integrity-baseline.json`
+is resolved relative to the current working directory, so call it from a
+stable directory or set an absolute `baseline:` in the config file.
 
 ### Example session
 
@@ -111,7 +114,7 @@ whole document.
 | --- | --- |
 | `--baseline <path>` | baseline file (required unless set in config) |
 | `--algo <name>` | `sha256` (default), `sha512`, `blake2b`; `check` defaults to the baseline's stored algorithm when omitted, an explicit different value fails the run |
-| `--format text|json` | output format |
+| `--format text|json` | output format; `watch` always emits one JSON line per event regardless of this flag |
 | `-q` / `--quiet` | hide unmodified lines; on a clean tree print nothing at all (CI/cron friendly, exit code still 0/1/2) |
 | `--include` / `--exclude` | glob filters, repeatable (validated at load) |
 | `--workers N` | hashing workers (0 = NumCPU) |
@@ -185,6 +188,13 @@ before the attacker had access.
   component mid-hash is not separately guarded (guarding every component
   would require `openat`-style per-component walks), so treat the scanner
   as a strong defense against link swaps, not as a mount-point boundary.
+- **Case-only rename on a case-insensitive filesystem.** Renaming a file
+  from `Foo.log` to `foo.log` on a case-insensitive volume (default on
+  macOS/Windows) changes no bytes; the scanner treats `Foo.log` and
+  `foo.log` as distinct paths, so it may report the old name `MISSING`
+  and the new name `NEW` even though the content is identical. Run
+  `update` after such a rename, or scan with `--ignore-mtime` (content
+  only) to reduce the noise.
 
 ### Operational guidance
 

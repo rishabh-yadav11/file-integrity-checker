@@ -2,6 +2,7 @@ package walk
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -532,5 +533,41 @@ func TestScanUnreadableKeepsSiblings(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("unreadable paths = %v, want secret.log", ue.Paths)
+	}
+}
+
+// TestScanFollowSymlinkOutsideRootWarns verifies that hashing a symlink
+// whose target lies outside the scan root logs a warning that it is
+// reading outside the tree (L12).
+func TestScanFollowSymlinkOutsideRootWarns(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "inside.log"), []byte("in"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outsideDir := t.TempDir()
+	outside := filepath.Join(outsideDir, "secret.log")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	var warns []string
+	opts := Options{
+		Algo:           model.AlgoSHA256,
+		FollowSymlinks: true,
+		Warn:           func(f string, a ...any) { warns = append(warns, fmt.Sprintf(f, a...)) },
+	}
+	if _, err := Scan(root, opts); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, w := range warns {
+		if strings.Contains(w, "outside") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an outside-root warning, got: %v", warns)
 	}
 }
