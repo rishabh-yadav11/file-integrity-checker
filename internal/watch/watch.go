@@ -223,8 +223,9 @@ func scanSingle(abs, root string, opts walk.Options) ([]model.Entry, error) {
 	}
 	// One file: hash inline instead of spinning up a full worker pool
 	// (the pool would launch Workers goroutines and three channels to
-	// process a single job, per debounced fs event).
-	sum, err := hash.FileBuffer(abs, opts.Algo, make([]byte, 1<<20))
+	// process a single job, per debounced fs event). hash.File reuses the
+	// shared chunkSize buffer (Q3).
+	sum, err := hash.File(abs, opts.Algo)
 	if err != nil {
 		return nil, err
 	}

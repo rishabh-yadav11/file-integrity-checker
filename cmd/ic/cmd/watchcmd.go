@@ -28,15 +28,13 @@ func newWatchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			url := r.cfg.WebhookURL
-			if f := c.Flags().Lookup("webhook"); f != nil && f.Changed {
-				url, _ = c.Flags().GetString("webhook")
-			}
+			// The --webhook flag is already merged into the config by
+			// loadRuntime/flagsToOverrides; do not re-read it here (Q1).
 			wcfg := watch.Config{
 				Root:       args[0],
 				ScanOpts:   r.scanOpts(),
 				Baseline:   base,
-				WebhookURL: url,
+				WebhookURL: r.cfg.WebhookURL,
 				Debounce:   debounce,
 				Out:        stdout(),
 				Log:        r.log,

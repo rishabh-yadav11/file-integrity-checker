@@ -7,6 +7,10 @@ import (
 	"github.com/rishabh-yadav11/file-integrity-checker/cmd/ic/cmd"
 )
 
+// exitFunc is swappable so tests can exercise main() without terminating
+// the process (Q5).
+var exitFunc = os.Exit
+
 func main() {
-	os.Exit(cmd.Execute())
+	exitFunc(cmd.Execute())
 }

@@ -216,12 +216,18 @@ func TestCompareSingleFile(t *testing.T) {
 	if len(res) != 1 || res[0].Kind != model.KindModified {
 		t.Fatalf("tampered single-file results = %+v, want modified a.log", res)
 	}
-	// file not in baseline reports New, not an error
-	res, err = Compare(filepath.Join(root, "notes.txt"), base, opts)
+	// a file created after the baseline reports New, not an error
+	added := filepath.Join(root, "added.log")
+	if err := os.WriteFile(added, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err = Compare(added, base, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = res
+	if len(res) != 1 || res[0].Kind != model.KindNew {
+		t.Fatalf("new single-file compare = %+v, want new", res)
+	}
 }
 
 // TestCompareSingleFileLegacyRoot covers baselines written by older

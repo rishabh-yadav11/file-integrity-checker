@@ -36,3 +36,31 @@ func TestMainSmoke(t *testing.T) {
 		t.Fatalf("tampered check exit = %d, want %d", c, cmd.ExitChanges)
 	}
 }
+
+// TestMainExitsCode exercises the real main() entrypoint by swapping
+// exitFunc with a capture, so the os.Exit line is covered without dying
+// (Q5).
+func TestMainExitsCode(t *testing.T) {
+	oldExit := exitFunc
+	defer func() { exitFunc = oldExit }()
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("IC_KEY", "k")
+	os.Args = []string{"ic", "init", logs, "--baseline", filepath.Join(dir, "b.json")}
+
+	code := -1
+	exitFunc = func(c int) { code = c }
+	main()
+	if code != cmd.ExitOK {
+		t.Fatalf("main exit = %d, want %d", code, cmd.ExitOK)
+	}
+}

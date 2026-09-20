@@ -98,8 +98,9 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 			singleFile = true
 		} else {
 			// One file: hash inline; a worker pool would start Workers
-			// goroutines to process a single job.
-			sum, err := hash.FileBuffer(abs, opts.Algo, make([]byte, 1<<20))
+			// goroutines to process a single job. hash.File reuses the
+			// shared chunkSize buffer (Q3).
+			sum, err := hash.File(abs, opts.Algo)
 			if err != nil {
 				return nil, err
 			}

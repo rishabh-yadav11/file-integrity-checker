@@ -30,7 +30,6 @@ func TestWatchCmdCancelledContext(t *testing.T) {
 
 	// Harness chdirs; run from dir with env key set.
 	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"}, "watch", "logs")
-	_ = time.Millisecond // keep time import if debounce default changes
 	if code == ExitError && out == "" {
 		t.Fatalf("watch exited with error and no output")
 	}

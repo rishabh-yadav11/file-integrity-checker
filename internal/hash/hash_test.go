@@ -86,7 +86,6 @@ func TestFileMissing(t *testing.T) {
 
 func TestPoolConcurrency(t *testing.T) {
 	t.Parallel()
-	_ = t.TempDir() // reserved for future per-case fixtures
 	var paths []string
 	for i := 0; i < 20; i++ {
 		paths = append(paths, writeTemp(t, "f"+string(rune('a'+i))+".bin", "content-"+string(rune('a'+i))))

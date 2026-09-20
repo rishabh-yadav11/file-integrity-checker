@@ -52,11 +52,11 @@ func TestScanSingle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Path != "hello-should-be-relative" {
-		// path is relative of root: file at root => its base name
-		if entries[0].Path != filepath.Base(p) {
-			t.Fatalf("entry path = %q, want base name", entries[0].Path)
-		}
+	if len(entries) != 1 {
+		t.Fatalf("scanSingle returned %d entries, want 1", len(entries))
+	}
+	if entries[0].Path != filepath.Base(p) {
+		t.Fatalf("entry path = %q, want base name %q", entries[0].Path, filepath.Base(p))
 	}
 	if entries[0].Hash == "" {
 		t.Fatal("empty hash")

@@ -272,8 +272,9 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 		return nil, err
 	}
 	// One file: hash inline; a worker pool would start Workers
-	// goroutines to process a single job.
-	sum, err := hash.FileBuffer(abs, r.algo, make([]byte, 1<<20))
+	// goroutines to process a single job. hash.File reuses the shared
+	// chunkSize buffer (Q3).
+	sum, err := hash.File(abs, r.algo)
 	if err != nil {
 		return nil, err
 	}
