@@ -142,6 +142,13 @@ func loadRuntime(cmd *cobra.Command) (*runtime, error) {
 // account; it is refused by default unless --allow-loose-keyfile is given.
 func resolveKey(cfg config.Config) ([]byte, error) {
 	if env := os.Getenv("IC_KEY"); env != "" {
+		if cfg.KeyFile != "" {
+			// Both configured: IC_KEY silently beating the keyfile is
+			// the kind of surprise that ships the wrong secret. Warn so
+			// the operator can drop one of them (M9).
+			slog.Warn("IC_KEY and keyfile are both set; IC_KEY takes precedence",
+				slog.String("keyfile", cfg.KeyFile))
+		}
 		return []byte(env), nil
 	}
 	if cfg.KeyFile != "" {
@@ -199,6 +206,10 @@ func (r *runtime) scanOpts() walk.Options {
 	if abs, err := filepath.Abs(r.cfg.Baseline); err == nil {
 		opts.ExcludePaths = append(opts.ExcludePaths, abs)
 	}
+	// Auto-exclude the atomic-write temp files (.baseline-*.tmp) too: a
+	// stale one left by a crashed Save would otherwise show up as a NEW
+	// entry in scans (M8).
+	opts.Exclude = append(opts.Exclude, ".baseline-*.tmp")
 	return opts
 }
 
@@ -206,7 +217,7 @@ func (r *runtime) scanOpts() walk.Options {
 func (r *runtime) scan(path string) ([]model.Entry, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot scan %s: %w", path, err)
 	}
 	// Symlinks are never followed for a single-file init: record the
 	// link target instead of hashing through it. A symlink to a
@@ -229,9 +240,10 @@ func (r *runtime) scan(path string) ([]model.Entry, error) {
 		return walk.Scan(path, r.scanOpts())
 	}
 	// FIFOs, sockets, devices: never open them (a FIFO read would block).
+	// As a single init target they cannot be hashed, so refusing beats
+	// silently writing an empty baseline (M4).
 	if !info.Mode().IsRegular() {
-		r.log.Warn("skipping non-regular entry %s (type %v)", path, info.Mode())
-		return nil, nil
+		return nil, fmt.Errorf("refusing to init %s: not a regular file (type %v)", path, info.Mode())
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {

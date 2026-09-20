@@ -100,8 +100,12 @@ func TestRunMissingRoot(t *testing.T) {
 	}
 }
 
-// setTrap installs/removes the emit trap.
-func setTrap(f func(Event)) { trapSink = f }
+// setTrap installs/removes the emit trap (mutex-guarded, M15).
+func setTrap(f func(Event)) {
+	trapMu.Lock()
+	trapSink = f
+	trapMu.Unlock()
+}
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(&sinkWriter{}, nil))

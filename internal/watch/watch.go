@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"log/slog"
@@ -88,9 +89,10 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	var (
-		mu      sync.Mutex
-		pending = map[string]time.Time{}
-		flushCh = make(chan struct{}, 1)
+		mu       sync.Mutex
+		pending  = map[string]time.Time{}
+		flushCh  = make(chan struct{}, 1)
+		overflow int // fsnotify event-overflow count (M14)
 	)
 	// Baseline lookup index: handleEvent runs once per debounced event,
 	// so index the baseline once up front instead of rebuilding an
@@ -128,7 +130,7 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.Log.Info("watch stopped")
 			return nil
 		case err := <-watcher.Errors:
-			cfg.Log.Error("watcher error", slog.Any("err", err))
+			handleWatcherError(cfg.Log, err, &overflow)
 		case ev, ok := <-watcher.Events:
 			if !ok {
 				return nil
@@ -151,6 +153,20 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 		}
 	}
+}
+
+// handleWatcherError logs an fsnotify watcher error. An event overflow
+// means the kernel dropped events, so it is surfaced at Error level with
+// a running count and a hint to run a full `check` (M14).
+func handleWatcherError(log *slog.Logger, err error, overflow *int) {
+	if errors.Is(err, fsnotify.ErrEventOverflow) {
+		*overflow++
+		log.Error("fsnotify event overflow: some changes were dropped",
+			slog.Int("overflow_count", *overflow),
+			slog.String("hint", "run 'check' for a full rescan"))
+		return
+	}
+	log.Error("watcher error", slog.Any("err", err))
 }
 
 // watchRecursive adds the root and all subdirectories.
@@ -214,18 +230,37 @@ func handleEvent(ctx context.Context, cfg Config, baseByPath map[string]model.En
 	if err := ctx.Err(); err != nil {
 		return // shutting down: skip pending work
 	}
-	rel, _ := filepath.Rel(cfg.Root, path)
+	// Baseline-relative path: a watch root nested under the baseline root
+	// (baseline on "wsub", watching "wsub/sub") must compare and emit
+	// against the same keys `check` uses ("sub/file"), otherwise the
+	// files the baseline originally recorded are misreported as NEW (M2).
+	prefix := ""
+	if cfg.Baseline.Root != "" {
+		br, err1 := filepath.Abs(cfg.Baseline.Root)
+		wr, err2 := filepath.Abs(cfg.Root)
+		if err1 == nil && err2 == nil {
+			if pr, err := filepath.Rel(br, wr); err == nil && pr != ".." && !strings.HasPrefix(pr, ".."+string(filepath.Separator)) {
+				if s := filepath.ToSlash(pr); s != "." {
+					prefix = s + "/"
+				}
+			}
+		}
+	}
+	rel := filepath.ToSlash(mustRel(cfg.Root, path))
+	if prefix != "" {
+		rel = prefix + rel
+	}
 	// Respect the same include/exclude view as check: events on paths
 	// the user filtered out must not produce alerts. (Dirs are already
 	// pruned from the watcher; this covers file-level globs.)
-	if cfg.ScanOpts.Skip(filepath.ToSlash(rel), false) {
+	if cfg.ScanOpts.Skip(rel, false) {
 		return
 	}
 	// Rotated logs: the old name vanished => report as missing only if
 	// it was in the baseline; the new file is reported as new.
 	if _, err := os.Lstat(path); err != nil {
 		// Path vanished: report only if it was in the baseline.
-		if e, ok := baseByPath[filepath.ToSlash(rel)]; ok {
+		if e, ok := baseByPath[rel]; ok {
 			emit(cfg, Event{Path: e.Path, Op: "remove", Kind: model.KindMissing,
 				Time: time.Now(), Details: "file disappeared while watched"})
 		}
@@ -238,7 +273,7 @@ func handleEvent(ctx context.Context, cfg Config, baseByPath map[string]model.En
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		// Record the link (never follow); compare against any baseline
 		// entry to distinguish a retarget, a file->link swap, or a new link.
-		entry, serr := walk.StatEntry(path, filepath.ToSlash(rel))
+		entry, serr := walk.StatEntry(path, rel)
 		if serr != nil {
 			cfg.Log.Warn("rescan failed", slog.String("path", path), slog.String("err", serr.Error()))
 			return
@@ -264,6 +299,9 @@ func handleEvent(ctx context.Context, cfg Config, baseByPath map[string]model.En
 		return
 	}
 	for _, e := range cur {
+		if prefix != "" {
+			e.Path = prefix + e.Path
+		}
 		old, ok := baseByPath[e.Path]
 		switch {
 		case !ok:
@@ -277,17 +315,23 @@ func handleEvent(ctx context.Context, cfg Config, baseByPath map[string]model.En
 	}
 }
 
+// trapMu guards trapSink: tests set it while emit reads it, so access is
+// serialized to keep the race detector quiet even under concurrent runs
+// (M15).
+var trapMu sync.Mutex
+
 // trapSink allows tests to capture events; nil in production.
 var trapSink func(Event)
 
-// emit logs, traps (tests), and optionally webhooks an event. The event
-// is also serialized as one JSON line to Out when Out is a non-nil
-// writer distinct from the default. Webhook delivery is handed to the
-// bounded dispatcher (never a fresh goroutine), which drops an event
-// only when its queue is full -- never silently and never on shutdown.
+func getTrapSink() func(Event) {
+	trapMu.Lock()
+	defer trapMu.Unlock()
+	return trapSink
+}
+
 func emit(cfg Config, ev Event) {
-	if trapSink != nil {
-		trapSink(ev)
+	if t := getTrapSink(); t != nil {
+		t(ev)
 	}
 	if cfg.Out != nil {
 		if b, err := json.Marshal(ev); err == nil {

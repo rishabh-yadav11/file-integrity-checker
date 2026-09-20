@@ -70,8 +70,13 @@ type Baseline struct {
 	Version   int       `json:"version"`
 	Algorithm Algorithm `json:"algorithm"`
 	CreatedAt time.Time `json:"created_at"`
-	Root      string    `json:"root"`
-	Entries   []Entry   `json:"entries"`
+	// Sequence is a per-file monotonic counter covered by the HMAC. It
+	// lets an external anchor detect a replayed (rolled-back) baseline:
+	// on its own it cannot stop an attacker who holds the key, so the
+	// operator must store the current sequence out of band (see README).
+	Sequence uint64  `json:"sequence"`
+	Root     string  `json:"root"`
+	Entries  []Entry `json:"entries"`
 }
 
 // BaselineVersion is the current baseline format version.

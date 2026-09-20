@@ -594,3 +594,99 @@ func TestCheckUnreadableKeepsSiblings(t *testing.T) {
 		t.Fatalf("unreadable file must not be reported MISSING:\n%s", out)
 	}
 }
+
+// TestCheckDeletedRootReportsMissing verifies that checking a root that
+// has been deleted reports every baselined entry as MISSING (a finding,
+// exit 1) instead of surfacing a raw stat error (M3).
+func TestCheckDeletedRootReportsMissing(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "b.log"), []byte("B"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if err := os.RemoveAll(logs); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", bl)
+	if code != ExitChanges {
+		t.Fatalf("check after deleting root = %d, want 1:\n%s", code, out)
+	}
+	if !strings.Contains(out, "MISSING") || !strings.Contains(out, "a.log") {
+		t.Fatalf("deleted root must report MISSING entries:\n%s", out)
+	}
+}
+
+// TestStaleBaselineTempExcludedFromScan verifies an orphaned baseline temp
+// file (.baseline-*.tmp) inside the watched tree is auto-excluded and does
+// not show up as a NEW result (M8).
+func TestStaleBaselineTempExcludedFromScan(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	stale := filepath.Join(logs, ".baseline-deadbeef.tmp")
+	if err := os.WriteFile(stale, []byte("orphan"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", bl)
+	if code != ExitOK {
+		t.Fatalf("check with stale temp = %d, want 0 (temp must be excluded):\n%s", code, out)
+	}
+	if strings.Contains(out, ".baseline-deadbeef.tmp") || strings.Contains(out, "NEW") {
+		t.Fatalf("stale temp file leaked into results:\n%s", out)
+	}
+}
+
+// TestInitNonexistentPathWrapped verifies init of a nonexistent path exits
+// 2 with an actionable "cannot scan <path>" message rather than a raw
+// "lstat ...: no such file" leak (M13).
+func TestInitNonexistentPathWrapped(t *testing.T) {
+	dir := t.TempDir()
+	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
+		"init", "does-not-exist", "--baseline", "b.json")
+	if code != ExitError {
+		t.Fatalf("init nonexistent = %d, want 2:\n%s", code, out)
+	}
+	if !strings.Contains(out, "cannot scan") || !strings.Contains(out, "does-not-exist") {
+		t.Fatalf("expected wrapped 'cannot scan' error, got: %s", out)
+	}
+}
+
+// TestInitSingleFileInTreeBaselineWarns verifies the in-tree baseline
+// warning fires for a single-file init whose baseline sits next to the
+// file (M16): the relative check must be against the parent dir, not the
+// file itself.
+func TestInitSingleFileInTreeBaselineWarns(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	code, out := runCLIIn(t, dir, dir, env, "init", "f.txt", "--baseline", "b.json")
+	if code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if !strings.Contains(out, "baseline is inside the watched tree") {
+		t.Fatalf("single-file init with in-tree baseline must warn (M16): %s", out)
+	}
+}

@@ -60,22 +60,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSavePerms0600(t *testing.T) {
-	t.Parallel()
-	st, _ := New(testKey())
-	path := filepath.Join(t.TempDir(), "b.json")
-	if err := st.Save(path, sampleBaseline(time.Now())); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("baseline perms = %v, want -rw-------", info.Mode().Perm())
-	}
-}
-
 func TestSaveAtomicNoTempLeftovers(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -303,26 +287,8 @@ func TestTrailingGarbageRejected(t *testing.T) {
 	}
 }
 
-// TestSaveCreatesMissingParentDir verifies Save creates the baseline's
-// parent directory (0700) instead of failing when it does not exist.
-func TestSaveCreatesMissingParentDir(t *testing.T) {
-	t.Parallel()
-	st, err := New(testKey())
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state", "nested", "baseline.json")
-	if err := st.Save(path, sampleBaseline(time.Now().UTC())); err != nil {
-		t.Fatalf("Save into missing dir: %v", err)
-	}
-	if fi, err := os.Stat(filepath.Dir(path)); err != nil || fi.Mode().Perm() != 0o700 {
-		t.Fatalf("parent dir mode = %v (%v), want 0700", fi.Mode().Perm(), err)
-	}
-	if _, err := st.Load(path); err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-}
+// TestSaveCreatesMissingParentDir is POSIX-only (checks parent dir 0700)
+// and lives in baseline_unix_test.go.
 
 // TestSaveCreatesParentDir verifies Save creates the baseline's parent
 // directory when it does not exist yet (--baseline state/b.json on the
@@ -341,5 +307,85 @@ func TestSaveCreatesParentDir(t *testing.T) {
 	}
 	if _, err := st.Load(path); err != nil {
 		t.Fatalf("Load after creating parent: %v", err)
+	}
+}
+
+// TestSaveSequenceMonotonic verifies successive saves carry an incrementing
+// sequence number covered by the HMAC (M1 replay protection).
+func TestSaveSequenceMonotonic(t *testing.T) {
+	t.Parallel()
+	st, _ := New(testKey())
+	path := filepath.Join(t.TempDir(), "b.json")
+	if err := st.Save(path, sampleBaseline(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	b1, err := st.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b1.Sequence != 1 {
+		t.Fatalf("first save sequence = %d, want 1", b1.Sequence)
+	}
+	if err := st.Save(path, sampleBaseline(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	b2, err := st.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b2.Sequence != b1.Sequence+1 {
+		t.Fatalf("second save sequence = %d, want %d", b2.Sequence, b1.Sequence+1)
+	}
+}
+
+// TestSequenceTamperInvalidatesMAC verifies that editing the sequence
+// number after the fact breaks the HMAC (the counter is part of the
+// signed payload).
+func TestSequenceTamperInvalidatesMAC(t *testing.T) {
+	t.Parallel()
+	st, _ := New(testKey())
+	path := filepath.Join(t.TempDir(), "b.json")
+	if err := st.Save(path, sampleBaseline(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	orig, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(orig, &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["sequence"] = raw["sequence"].(float64) + 1
+	tampered, _ := json.MarshalIndent(raw, "", "  ")
+	tampered = append(tampered, '\n')
+	tamperedPath := filepath.Join(t.TempDir(), "tampered.json")
+	if err := os.WriteFile(tamperedPath, tampered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Load(tamperedPath); err == nil {
+		t.Fatal("sequence tamper must fail HMAC verification")
+	}
+}
+
+// TestSaveSweepsStaleTemp verifies Save removes orphaned atomic-write temp
+// files (.baseline-*.tmp) left by a previously crashed run (M8).
+func TestSaveSweepsStaleTemp(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	stale := filepath.Join(dir, ".baseline-deadbeef.tmp")
+	if err := os.WriteFile(stale, []byte("orphan"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := New(testKey())
+	path := filepath.Join(dir, "b.json")
+	if err := st.Save(path, sampleBaseline(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale temp file not swept: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("baseline not written after sweep: %v", err)
 	}
 }

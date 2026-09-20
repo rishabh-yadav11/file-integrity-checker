@@ -44,12 +44,18 @@ func TestInitSingleFileFifoNoHang(t *testing.T) {
 	if err := syscall.Mkfifo(pipe, 0o600); err != nil {
 		t.Skipf("cannot create fifo: %v", err)
 	}
+	// A single FIFO cannot be hashed; init must refuse (exit 2) rather
+	// than hang or write an empty baseline (M4).
 	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"},
 		"init", "p", "--baseline", "b.json")
-	if code != ExitOK {
-		t.Fatalf("single-file fifo init = %d (must not hang), want 0:\n%s", code, out)
+	if code != ExitError {
+		t.Fatalf("single-file fifo init = %d (must not hang), want 2:\n%s", code, out)
 	}
-	if !contains(out, "skipping non-regular") {
-		t.Fatalf("expected a skip warning for the fifo, got: %s", out)
+	if !contains(out, "not a regular file") {
+		t.Fatalf("expected a refusal for the fifo, got: %s", out)
+	}
+	// And no baseline must have been written.
+	if _, err := os.Stat(filepath.Join(dir, "b.json")); err == nil {
+		t.Fatal("fifo init must not write a (empty) baseline")
 	}
 }

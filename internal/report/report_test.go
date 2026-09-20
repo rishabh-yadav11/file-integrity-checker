@@ -151,3 +151,22 @@ func TestSummaryText(t *testing.T) {
 		t.Fatalf("Text() = %q, want %q", s.Text(), want)
 	}
 }
+
+// TestRenderJSONDoesNotEscapeArrow verifies the "->" inside reason text is
+// not HTML-escaped to \u003e in JSON output (M6).
+func TestRenderJSONDoesNotEscapeArrow(t *testing.T) {
+	t.Parallel()
+	var sb strings.Builder
+	if err := Render(&sb, []model.Result{
+		{Path: "a.log", Kind: model.KindModified, Reasons: []string{"size 3 -> 9"}},
+	}, Options{Format: "json"}); err != nil {
+		t.Fatal(err)
+	}
+	out := sb.String()
+	if strings.Contains(out, `\u003e`) || strings.Contains(out, `\u003c`) {
+		t.Fatalf("JSON must not HTML-escape arrows: %s", out)
+	}
+	if !strings.Contains(out, "3 -> 9") {
+		t.Fatalf("expected raw \"3 -> 9\" in JSON output: %s", out)
+	}
+}

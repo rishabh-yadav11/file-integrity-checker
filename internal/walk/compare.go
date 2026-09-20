@@ -46,6 +46,14 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 			if r := deletedReport(root, base, baseRoot); r != nil {
 				return []model.Result{*r}, nil
 			}
+			// A deleted root means every baselined entry vanished too:
+			// report them all MISSING (a finding, exit 1) instead of
+			// surfacing a raw stat error (M3).
+			out := make([]model.Result, 0, len(base.Entries))
+			for _, e := range base.Entries {
+				out = append(out, model.Result{Path: e.Path, Kind: model.KindMissing})
+			}
+			return out, nil
 		}
 		return nil, err
 	}

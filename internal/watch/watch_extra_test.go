@@ -3,15 +3,20 @@ package watch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/model"
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/walk"
@@ -290,4 +295,104 @@ func TestEmitWebhookQueueFullDoesNotBlock(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("emit blocked on a full webhook queue")
 	}
+}
+
+// TestHandleEventSubdirWatchBaselineKeys verifies a watch whose root is a
+// subdir of the baseline root offsets baseline keys: a pre-existing file
+// is modified (not misreported NEW), and its event path matches the
+// baseline-relative "sub/file" (M2).
+func TestHandleEventSubdirWatchBaselineKeys(t *testing.T) {
+	dir := t.TempDir()
+	wsub := filepath.Join(dir, "wsub")
+	sub := filepath.Join(wsub, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wsub, "one.log"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "two.log"), []byte("two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := walk.Scan(wsub, walk.Options{Algo: model.AlgoSHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := model.Baseline{Algorithm: model.AlgoSHA256, Root: wsub, Entries: entries}
+
+	trap := &eventTrap{ch: make(chan Event, 8)}
+	setTrap(trap.trap)
+	defer setTrap(nil)
+	cfg := Config{
+		Root:     sub,
+		ScanOpts: walk.Options{Algo: model.AlgoSHA256},
+		Baseline: base,
+		Out:      nullWriter{},
+		Log:      testLogger(),
+	}
+	if err := os.WriteFile(filepath.Join(sub, "two.log"), []byte("two-changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handleEvent(context.Background(), cfg, baseIndex(cfg.Baseline), filepath.Join(sub, "two.log"))
+	select {
+	case ev := <-trap.ch:
+		if ev.Kind == model.KindNew {
+			t.Fatalf("pre-existing subdir file reported NEW (M2): %+v", ev)
+		}
+		if ev.Path != "sub/two.log" {
+			t.Fatalf("event path = %q, want baseline-relative sub/two.log", ev.Path)
+		}
+	default:
+		t.Fatal("no event emitted for modified subdir file")
+	}
+}
+
+// TestHandleWatcherErrorOverflow verifies an fsnotify event overflow is
+// surfaced at Error level with a running count and a rescan hint, instead
+// of being invisible (M14).
+func TestHandleWatcherErrorOverflow(t *testing.T) {
+	var buf strings.Builder
+	lg := slog.New(slog.NewTextHandler(&buf, nil))
+	var ov int
+	handleWatcherError(lg, fsnotify.ErrEventOverflow, &ov)
+	handleWatcherError(lg, fsnotify.ErrEventOverflow, &ov)
+	handleWatcherError(lg, errors.New("boom"), &ov)
+	out := buf.String()
+	if !strings.Contains(out, "overflow") || !strings.Contains(out, "overflow_count=2") {
+		t.Fatalf("overflow not logged at error with count 2:\n%s", out)
+	}
+	if !strings.Contains(out, "boom") {
+		t.Fatalf("non-overflow error not logged:\n%s", out)
+	}
+	if ov != 2 {
+		t.Fatalf("overflow counter = %d, want 2", ov)
+	}
+}
+
+// TestTrapSinkConcurrentAccess stresses the test-only trap sink from
+// concurrent emit and set calls; with the mutex (M15) the race detector
+// must stay quiet.
+func TestTrapSinkConcurrentAccess(t *testing.T) {
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				emit(Config{Log: testLogger()}, Event{Path: "x", Time: time.Now()})
+			}
+		}()
+	}
+	for range 200 {
+		setTrap(func(Event) {})
+		setTrap(nil)
+	}
+	close(stop)
+	wg.Wait()
 }

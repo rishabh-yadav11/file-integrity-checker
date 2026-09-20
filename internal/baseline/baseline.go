@@ -49,6 +49,7 @@ type signedDoc struct {
 	Version   int             `json:"version"`
 	Algorithm model.Algorithm `json:"algorithm"`
 	CreatedAt string          `json:"created_at"`
+	Sequence  uint64          `json:"sequence"`
 	Root      string          `json:"root"`
 	Entries   []model.Entry   `json:"entries"`
 }
@@ -73,10 +74,17 @@ func (s *Store) computeMAC(d signedDoc) (string, error) {
 
 // Save writes b to path atomically with 0600 permissions and an HMAC tag.
 func (s *Store) Save(path string, b model.Baseline) error {
+	seq := b.Sequence
+	if seq == 0 {
+		// Monotonic: start at 1, then increment whatever is already
+		// stored so a replay of an older baseline is distinguishable.
+		seq = s.nextSequence(path)
+	}
 	sd := signedDoc{
 		Version:   b.Version,
 		Algorithm: b.Algorithm,
 		CreatedAt: b.CreatedAt.UTC().Format("2006-01-02T15:04:05.000000000Z07:00"),
+		Sequence:  seq,
 		Root:      b.Root,
 		Entries:   b.Entries,
 	}
@@ -97,6 +105,14 @@ func (s *Store) Save(path string, b model.Baseline) error {
 	// not exist yet (e.g. --baseline state/baseline.json on first run).
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("baseline: create %s: %w", dir, err)
+	}
+	// Sweep stale atomic-write temp files (.baseline-*.tmp) left by a
+	// crashed earlier Save so they never linger and surface as NEW in a
+	// scan (M8). This runs before we create our own fresh temp name.
+	if matches, _ := filepath.Glob(filepath.Join(dir, ".baseline-*.tmp")); len(matches) > 0 {
+		for _, m := range matches {
+			_ = os.Remove(m)
+		}
 	}
 	tmp, err := os.CreateTemp(dir, ".baseline-*.tmp")
 	if err != nil {
@@ -133,6 +149,27 @@ func (s *Store) Save(path string, b model.Baseline) error {
 // ErrTampered is returned when the baseline HMAC does not verify.
 var ErrTampered = errors.New("baseline: HMAC verification failed (baseline may be tampered)")
 
+// nextSequence reads the currently-stored baseline's sequence (verifying
+// its HMAC with this store's key) so successive saves are monotonic. A
+// missing, corrupt, or differently-keyed existing file falls back to 1.
+func (s *Store) nextSequence(path string) uint64 {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 1
+	}
+	var d doc
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&d); err != nil {
+		return 1
+	}
+	want, err := s.computeMAC(d.signedDoc)
+	if err != nil || !hmac.Equal([]byte(want), []byte(d.HMAC)) {
+		return 1
+	}
+	return d.Sequence + 1
+}
+
 // Load reads path, verifies the HMAC, and returns the baseline.
 func (s *Store) Load(path string) (model.Baseline, error) {
 	raw, err := os.ReadFile(path)
@@ -166,6 +203,7 @@ func (s *Store) Load(path string) (model.Baseline, error) {
 		Version:   d.Version,
 		Algorithm: d.Algorithm,
 		CreatedAt: created,
+		Sequence:  d.Sequence,
 		Root:      d.Root,
 		Entries:   d.Entries,
 	}

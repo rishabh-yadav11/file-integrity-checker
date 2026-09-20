@@ -269,38 +269,8 @@ func TestUpdateRefusesAlgoSwitch(t *testing.T) {
 	}
 }
 
-// TestVerifyBaselineWarnsOnLoosePerms verifies verify-baseline warns when
-// the baseline is group/world readable but still reports OK.
-func TestVerifyBaselineWarnsOnLoosePerms(t *testing.T) {
-	dir := t.TempDir()
-	logs := filepath.Join(dir, "logs")
-	if err := os.MkdirAll(logs, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	env := map[string]string{"IC_KEY": "k"}
-	if code, _ := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", "b.json"); code != ExitOK {
-		t.Fatalf("init: %d", code)
-	}
-	loose := filepath.Join(dir, "b.json")
-	if err := os.Chmod(loose, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"}, "verify-baseline", "--baseline", "b.json")
-	if code != ExitOK || !contains(out, "baseline OK") || !contains(out, "group/world readable") {
-		t.Fatalf("verify loose = %d\n%s", code, out)
-	}
-	// Tight perms: no warning.
-	if err := os.Chmod(filepath.Join(dir, "b.json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, out = runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "k"}, "verify-baseline", "--baseline", "b.json")
-	if contains(out, "group/world readable") {
-		t.Fatalf("unexpected perms warning for 0600 baseline: %s", out)
-	}
-}
+// TestVerifyBaselineWarnsOnLoosePerms is POSIX-only (Windows has no
+// meaningful perms bits) and lives in looseperms_unix_test.go.
 
 // TestInitWarnsBaselineInsideTree verifies init warns when the baseline
 // is stored inside the tree it describes (self-referential setup).
@@ -373,5 +343,59 @@ func TestExecute(t *testing.T) {
 	t.Setenv("IC_KEY", "k")
 	if code := Execute(); code != ExitOK {
 		t.Fatalf("Execute(init) = %d, want 0", code)
+	}
+}
+
+// TestUpdateAndVerifyJSONFormat verifies update and verify-baseline emit a
+// JSON envelope in --format json instead of the human-readable text (M5).
+func TestUpdateAndVerifyJSONFormat(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	code, out := runCLIIn(t, dir, dir, env, "update", "logs", "--baseline", bl, "--format", "json")
+	if code != ExitOK || !strings.Contains(out, `"baseline"`) || !strings.Contains(out, `"accepted"`) {
+		t.Fatalf("update --format json: %d %s", code, out)
+	}
+	if strings.Contains(out, "baseline updated:") {
+		t.Fatalf("update --format json must not print the text summary: %s", out)
+	}
+	code, out = runCLIIn(t, dir, dir, env, "verify-baseline", "--baseline", bl, "--format", "json")
+	if code != ExitOK || !strings.Contains(out, `"ok"`) {
+		t.Fatalf("verify --format json: %d %s", code, out)
+	}
+	if strings.Contains(out, "baseline OK") {
+		t.Fatalf("verify --format json must not print the text line: %s", out)
+	}
+}
+
+// TestICKeyAndKeyfileWarns verifies that when both IC_KEY and --keyfile
+// are set the operator is warned that IC_KEY takes precedence, instead of
+// silently overriding (M9).
+func TestICKeyAndKeyfileWarns(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "x.log"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kf := filepath.Join(dir, "key.bin")
+	if err := os.WriteFile(kf, []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runCLIIn(t, dir, dir, map[string]string{"IC_KEY": "envkey"},
+		"init", dir, "--baseline", filepath.Join(dir, "b.json"), "--keyfile", kf)
+	if code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if !strings.Contains(out, "IC_KEY") || !strings.Contains(out, "precedence") {
+		t.Fatalf("expected an IC_KEY-precedence warning, got: %s", out)
 	}
 }

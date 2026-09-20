@@ -99,10 +99,11 @@ $ integrity-check check logs/ --baseline baseline.json --format json
 }
 ```
 
-Baseline fields: `version`, `algorithm`, `created_at`, `root` (absolute
-scan root), `entries[]` (each with `path`, `hash`, `size`, `mode`, `uid`,
-`gid`, `mtime`, optional `algorithm`, and `link_target` for symlinks), and
-an `hmac` covering the whole document.
+Baseline fields: `version`, `algorithm`, `created_at`, `sequence`
+(monotonic, HMAC-covered), `root` (absolute scan root), `entries[]` (each
+with `path`, `hash`, `size`, `mode`, `uid`, `gid`, `mtime`, optional
+`algorithm`, and `link_target` for symlinks), and an `hmac` covering the
+whole document.
 
 ### Options
 
@@ -161,6 +162,12 @@ before the attacker had access.
   be stored out of band (different host, offline media). An attacker who
   can rewrite the baseline *and* holds the key can re-sign their edits.
   `verify-baseline` only proves the file matches its own HMAC.
+- **Replay of an old signed baseline.** Each baseline carries a monotonic
+  `sequence` number covered by the HMAC. Because the tool is stateless,
+  the HMAC check alone cannot detect that a *whole older* baseline has
+  been restored. To close this, store the current sequence number out of
+  band (e.g. append it to your cron/audit log) and alert when a loaded
+  baseline's sequence is not greater than the last one you saw.
 - **Live attackers racing the watcher.** Watch mode is best-effort;
   `fsnotify` events are debounced, not a security boundary. Always run
   `check` from a trusted context for audit conclusions. Watch compares
@@ -169,9 +176,15 @@ before the attacker had access.
 - **Attacker with root on the scanning host.** A root attacker can
   subvert the binary, its config, or the kernel. Run integrity-check
   from read-only media against a read-only mount for high-assurance use.
-- **Symlink games.** Symlinks are never followed or hashed; a symlink
-  where a regular file was recorded shows as `modified`, and it is never
-  followed (no TOCTOU-follow into other trees).
+- **Symlink games.** Symlinks are never followed or hashed: the scanner
+  records the link (its target string) and never descends a directory
+  symlink (`WalkDir` does not follow them), and a symlink where a regular
+  file was recorded shows as `modified`. The final component of a hashed
+  path is opened with `O_NOFOLLOW`, which closes the stat-then-open race
+  on that component. A symlink raced into an *intermediate* path
+  component mid-hash is not separately guarded (guarding every component
+  would require `openat`-style per-component walks), so treat the scanner
+  as a strong defense against link swaps, not as a mount-point boundary.
 
 ### Operational guidance
 

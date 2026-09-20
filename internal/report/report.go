@@ -82,6 +82,9 @@ func Render(w io.Writer, results []model.Result, opts Options) error {
 func renderJSON(w io.Writer, results []model.Result) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
+	// Reasons carry "->" (e.g. "size 3 -> 9"); the default encoder escapes
+	// '>' and '<' to \u003e/\u003c, corrupting the diff text (M6).
+	enc.SetEscapeHTML(false)
 	return enc.Encode(struct {
 		Results []model.Result `json:"results"`
 	}{Results: results})

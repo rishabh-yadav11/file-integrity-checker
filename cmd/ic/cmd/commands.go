@@ -63,10 +63,14 @@ func newInitCmd() *cobra.Command {
 			// writable process could alter it. Warn so the operator
 			// stores it outside the tree.
 			absBase, _ := filepath.Abs(r.cfg.Baseline)
-			if rel, err := filepath.Rel(abs, absBase); err == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
+			// Compare against the effective scan root (`root`, which for
+			// a single-file baseline is the parent dir), so the in-tree
+			// warning fires for a baseline stored next to the file too
+			// (M16).
+			if rel, relErr := filepath.Rel(root, absBase); relErr == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
 				r.log.Warn("baseline is inside the watched tree; it is auto-excluded from scans - store it outside the tree so it cannot be modified in place",
 					slog.String("baseline", r.cfg.Baseline),
-					slog.String("root", abs))
+					slog.String("root", root))
 			}
 			if r.cfg.Format == "json" {
 				_ = json.NewEncoder(stdout()).Encode(map[string]any{
@@ -294,7 +298,15 @@ func newUpdateCmd() *cobra.Command {
 			if err := r.store.Save(r.cfg.Baseline, b); err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintf(stdout(), "baseline updated: %s (%d files accepted, %d total)\n", r.cfg.Baseline, len(entries), len(merged))
+			if r.cfg.Format == "json" {
+				_ = json.NewEncoder(stdout()).Encode(map[string]any{
+					"baseline": r.cfg.Baseline,
+					"accepted": len(entries),
+					"total":    len(merged),
+				})
+			} else {
+				_, _ = fmt.Fprintf(stdout(), "baseline updated: %s (%d files accepted, %d total)\n", r.cfg.Baseline, len(entries), len(merged))
+			}
 			return nil
 		},
 	}
@@ -314,15 +326,16 @@ func newVerifyBaselineCmd() *cobra.Command {
 			if _, err := r.loadBaseline(); err != nil {
 				return err
 			}
-			// Perms 0600 are part of the contract (goal: baseline 0600).
-			// A group/world-readable baseline leaks its contents and
-			// structure; warn loudly but keep the verdict accurate.
-			if fi, err := os.Stat(r.cfg.Baseline); err == nil && loosePerms(fi) {
-				r.log.Warn("baseline file is group/world readable; store it 0600",
-					slog.String("path", r.cfg.Baseline),
-					slog.String("mode", fmt.Sprintf("%04o", fi.Mode().Perm())))
+			// loadBaseline already warns when the baseline file is
+			// group/world readable; no second copy here (M12).
+			if r.cfg.Format == "json" {
+				_ = json.NewEncoder(stdout()).Encode(map[string]any{
+					"ok":       true,
+					"baseline": r.cfg.Baseline,
+				})
+			} else {
+				_, _ = fmt.Fprintln(stdout(), "baseline OK")
 			}
-			_, _ = fmt.Fprintln(stdout(), "baseline OK")
 			return nil
 		},
 	}
