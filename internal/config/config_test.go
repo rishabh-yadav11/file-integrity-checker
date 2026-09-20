@@ -191,3 +191,21 @@ func containsLevel(s, sub string) bool {
 		return false
 	})()
 }
+
+// TestSetupLoggerToFile verifies SetupLogger writes to the configured log
+// file and rejects unknown levels.
+func TestSetupLoggerToFile(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "log.txt")
+	lg, err := SetupLogger(f, "debug")
+	if err != nil {
+		t.Fatalf("SetupLogger: %v", err)
+	}
+	lg.Info("hello")
+	if _, err := os.Stat(f); err != nil {
+		t.Fatalf("log file not created: %v", err)
+	}
+	if _, err := SetupLogger("", "bogus"); err == nil {
+		t.Fatal("unknown level must error")
+	}
+}

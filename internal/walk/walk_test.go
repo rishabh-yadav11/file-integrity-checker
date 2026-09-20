@@ -1,6 +1,7 @@
 package walk
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -423,4 +424,113 @@ func keys(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestScanExcludePaths verifies that absolute ExcludePaths (e.g. an
+// in-tree baseline) are omitted verbatim from a scan, while sibling
+// files and path prefixes are unaffected.
+func TestScanExcludePaths(t *testing.T) {
+	t.Parallel()
+	root := makeTree(t)
+	excluded := filepath.Join(root, "a.log")
+	entries, err := Scan(root, Options{Algo: model.AlgoSHA256, ExcludePaths: []string{excluded}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Path == "a.log" {
+			t.Fatalf("a.log should have been excluded by absolute path")
+		}
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected sibling entries to survive the exclusion")
+	}
+}
+
+// TestExcludedDirAndExcludeAbs exercises the directory-glob pruning
+// predicate and the absolute-path predicate in isolation.
+func TestExcludedDirAndExcludeAbs(t *testing.T) {
+	t.Parallel()
+	opts := Options{Exclude: []string{"skipme/**"}}
+	if !opts.ExcludedDir("skipme") {
+		t.Fatal("ExcludedDir(skipme) should be true")
+	}
+	if opts.ExcludedDir("other") {
+		t.Fatal("ExcludedDir(other) should be false")
+	}
+
+	plain := Options{}
+	if plain.excludeAbs("/tmp/foo") {
+		t.Fatal("excludeAbs with no ExcludePaths must be false")
+	}
+	with := Options{ExcludePaths: []string{"/tmp/foo"}}
+	if !with.excludeAbs("/tmp/foo") {
+		t.Fatal("excludeAbs(/tmp/foo) should match itself")
+	}
+	if with.excludeAbs("/tmp/foo/bar") {
+		t.Fatal("excludeAbs must match exact cleaned paths, not prefixes")
+	}
+	if with.excludeAbs("/tmp/other") {
+		t.Fatal("excludeAbs(/tmp/other) should be false")
+	}
+	if with.excludeAbs("./tmp/foo") {
+		t.Fatal("excludeAbs must clean the candidate before comparing")
+	}
+}
+
+// TestUnreadableErrorError verifies the UnreadableError text reports the
+// count and the underlying per-file errors.
+func TestUnreadableErrorError(t *testing.T) {
+	t.Parallel()
+	ue := &UnreadableError{
+		Paths: []string{"a.log", "b.log"},
+		Errs:  []error{errors.New("read a.log: permission denied"), errors.New("read b.log: permission denied")},
+	}
+	s := ue.Error()
+	if !strings.Contains(s, "2 file(s) unreadable") {
+		t.Fatalf("error must include the count: %q", s)
+	}
+	if !strings.Contains(s, "a.log") || !strings.Contains(s, "b.log") {
+		t.Fatalf("error must name the unreadable files: %q", s)
+	}
+}
+
+// TestScanUnreadableKeepsSiblings verifies that one unreadable file no
+// longer aborts a scan: readable siblings are still returned and the
+// failure is reported as an *UnreadableError naming the file.
+func TestScanUnreadableKeepsSiblings(t *testing.T) {
+	root := makeTree(t)
+	secret := filepath.Join(root, "secret.log")
+	if err := os.WriteFile(secret, []byte("S"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(secret, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.Open(secret); err == nil {
+		f.Close()
+		t.Skip("running as root; permission checks are ineffective")
+	}
+	t.Cleanup(func() { _ = os.Chmod(secret, 0o600) })
+
+	entries, err := Scan(root, Options{Algo: model.AlgoSHA256})
+	if err == nil {
+		t.Fatal("expected an UnreadableError for the chmod-000 file")
+	}
+	ue, ok := err.(*UnreadableError)
+	if !ok {
+		t.Fatalf("error = %T, want *UnreadableError", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("readable siblings must still be returned")
+	}
+	found := false
+	for _, p := range ue.Paths {
+		if p == "secret.log" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("unreadable paths = %v, want secret.log", ue.Paths)
+	}
 }

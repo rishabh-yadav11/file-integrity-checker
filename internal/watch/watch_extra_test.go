@@ -3,11 +3,13 @@ package watch
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -244,5 +246,48 @@ func TestHandleEventRespectsExclude(t *testing.T) {
 	case ev := <-trap.ch:
 		t.Fatalf("unexpected event for excluded path: %+v", ev)
 	default:
+	}
+}
+
+// TestWebhookDispatchDrainsOnShutdown verifies webhook events enqueued
+// before cancellation are all posted before the dispatcher closes: no
+// alert is abandoned by an abrupt teardown (H4).
+func TestWebhookDispatchDrainsOnShutdown(t *testing.T) {
+	var posted atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posted.Add(1)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	d := newWebhookDispatch(srv.URL, ctx)
+	const n = 20
+	for i := range n {
+		d.ch <- Event{Path: fmt.Sprintf("e%d", i), Time: time.Now()}
+	}
+	cancel()
+	d.close() // must drain whatever is still queued
+	if got := posted.Load(); got != n {
+		t.Fatalf("posted %d/%d events after shutdown drain", got, n)
+	}
+}
+
+// TestEmitWebhookQueueFullDoesNotBlock verifies emit never blocks when the
+// webhook queue is full: it drops the event (logged) instead of stalling
+// the watcher or spawning a goroutine per event (H4).
+func TestEmitWebhookQueueFullDoesNotBlock(t *testing.T) {
+	cfg := Config{Log: testLogger()}
+	cfg.webhook = &webhookDispatch{ch: make(chan Event, 1)}
+	cfg.webhook.ch <- Event{} // fill the queue
+
+	done := make(chan struct{})
+	go func() {
+		emit(cfg, Event{Path: "x", Time: time.Now()})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("emit blocked on a full webhook queue")
 	}
 }

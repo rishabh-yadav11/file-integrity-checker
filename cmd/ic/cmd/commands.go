@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -106,8 +107,11 @@ func newCheckCmd() *cobra.Command {
 				r.algo = base.Algorithm
 			}
 			results, err := walk.Compare(args[0], base, r.scanOpts())
+			var unreadable *walk.UnreadableError
 			if err != nil {
-				return err
+				if !errors.As(err, &unreadable) {
+					return err
+				}
 			}
 			co := report.Options{
 				Format: r.cfg.Format,
@@ -124,6 +128,12 @@ func newCheckCmd() *cobra.Command {
 			// operator sees what moved, and the exit code still works.
 			if r.cfg.Format != "json" && (!r.cfg.Quiet || s.Changed()) {
 				_, _ = fmt.Fprintln(stdout(), s.Text())
+			}
+			// Unreadable files make the run an error: the sibling results
+			// above are still valid, but the tree could not be fully
+			// verified, so exit 2 (not a clean 0 or a changes-only 1).
+			if unreadable != nil {
+				return unreadable
 			}
 			if s.Changed() {
 				return errChangesFound
@@ -173,13 +183,16 @@ func newUpdateCmd() *cobra.Command {
 			if stat, statErr := os.Stat(abs); statErr == nil && !stat.IsDir() && base.Root == abs {
 				base.Root = filepath.Dir(abs)
 			}
-			entries, err := r.scan(args[0])
-			if err != nil {
-				return err
-			}
 			prefix := ""
 			if rel, relErr := filepath.Rel(base.Root, abs); relErr == nil {
-				if s := filepath.ToSlash(rel); s != "." {
+				s := filepath.ToSlash(rel)
+				// Reject a target that escapes the baseline root: writing
+				// "../x" entries would make every later check report a
+				// false MISSING for a path outside the tree.
+				if s == ".." || strings.HasPrefix(s, "../") {
+					return fmt.Errorf("update: %s is outside baseline root %s", abs, base.Root)
+				}
+				if s != "." {
 					prefix = s + "/"
 				}
 			} else {
@@ -189,9 +202,31 @@ func newUpdateCmd() *cobra.Command {
 			// exact relative path of a single-file target, so the merge
 			// below prunes only what is actually in scope.
 			info, statErr := os.Stat(abs)
+			// A vanished target cannot be rescanned: accept the deletion by
+			// pruning its scope from the baseline instead of failing on
+			// Lstat, so `rm x; update x` drops the entry instead of
+			// erroring and leaving it as a permanent MISSING.
+			vanished := statErr != nil && os.IsNotExist(statErr)
 			dirUpdate := true
 			if statErr == nil && !info.IsDir() {
 				dirUpdate = false
+			}
+			// For a vanished target the stat can no longer tell file from
+			// dir; fall back to the baseline. A path that matches an entry
+			// exactly was a single file (prune just that entry); otherwise
+			// it is a directory scope (prune everything under the prefix).
+			if vanished {
+				if relDir, relErr := filepath.Rel(base.Root, filepath.Dir(abs)); relErr == nil {
+					if s := filepath.ToSlash(relDir); s != "." {
+						prefix = s + "/"
+					}
+				}
+				for _, e := range base.Entries {
+					if e.Path == prefix+filepath.Base(abs) {
+						dirUpdate = false
+						break
+					}
+				}
 			}
 			relTarget := ""
 			if !dirUpdate {
@@ -209,6 +244,16 @@ func newUpdateCmd() *cobra.Command {
 					prefix = s + "/"
 				}
 				relTarget = prefix + filepath.Base(abs)
+			}
+			// Hash the current state, unless the target has vanished
+			// (already accepted as a deletion above: nothing left to scan,
+			// so entries stay empty and the merge prunes the scope).
+			var entries []model.Entry
+			if !vanished {
+				entries, err = r.scan(args[0])
+				if err != nil {
+					return err
+				}
 			}
 			for i := range entries {
 				entries[i].Path = prefix + entries[i].Path
@@ -272,7 +317,7 @@ func newVerifyBaselineCmd() *cobra.Command {
 			// Perms 0600 are part of the contract (goal: baseline 0600).
 			// A group/world-readable baseline leaks its contents and
 			// structure; warn loudly but keep the verdict accurate.
-			if fi, err := os.Stat(r.cfg.Baseline); err == nil && fi.Mode().Perm()&0o077 != 0 {
+			if fi, err := os.Stat(r.cfg.Baseline); err == nil && loosePerms(fi) {
 				r.log.Warn("baseline file is group/world readable; store it 0600",
 					slog.String("path", r.cfg.Baseline),
 					slog.String("mode", fmt.Sprintf("%04o", fi.Mode().Perm())))

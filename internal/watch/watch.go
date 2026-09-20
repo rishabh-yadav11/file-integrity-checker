@@ -32,6 +32,10 @@ type Config struct {
 	Debounce   time.Duration
 	Out        interface{ Write([]byte) (int, error) }
 	Log        *slog.Logger
+	// webhook is the bounded async POSTer for alerts; it is wired up in
+	// Run when WebhookURL is set, so direct emit test calls without Run
+	// never block on webhooks.
+	webhook *webhookDispatch
 }
 
 // Event is a detected change during watching.
@@ -74,6 +78,14 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	cfg.Log.Info("watching", "root", cfg.Root, "debounce", cfg.Debounce.String())
+
+	// A bounded, ctx-cancelled POST dispatcher replaces a fresh goroutine
+	// per event: a dead webhook can no longer wedge the watcher behind an
+	// unbounded pile of goroutines, and queued events drain at shutdown.
+	if cfg.WebhookURL != "" {
+		cfg.webhook = newWebhookDispatch(cfg.WebhookURL, ctx)
+		defer cfg.webhook.close() // drain in-flight/queued posts on exit
+	}
 
 	var (
 		mu      sync.Mutex
@@ -270,7 +282,9 @@ var trapSink func(Event)
 
 // emit logs, traps (tests), and optionally webhooks an event. The event
 // is also serialized as one JSON line to Out when Out is a non-nil
-// writer distinct from the default.
+// writer distinct from the default. Webhook delivery is handed to the
+// bounded dispatcher (never a fresh goroutine), which drops an event
+// only when its queue is full -- never silently and never on shutdown.
 func emit(cfg Config, ev Event) {
 	if trapSink != nil {
 		trapSink(ev)
@@ -281,10 +295,18 @@ func emit(cfg Config, ev Event) {
 		}
 	}
 	cfg.Log.Warn("tamper event", slog.String("path", ev.Path), slog.String("op", ev.Op), slog.String("kind", string(ev.Kind)))
-	if cfg.WebhookURL != "" {
-		go postWebhook(cfg.WebhookURL, ev)
+	if cfg.webhook != nil {
+		select {
+		case cfg.webhook.ch <- ev:
+		default:
+			cfg.Log.Warn("webhook queue full; dropping event", slog.String("path", ev.Path))
+		}
 	}
 }
+
+// webhookClient bounds a single POST so a hung endpoint cannot block the
+// dispatcher (and hence the watcher) indefinitely.
+var webhookClient = &http.Client{Timeout: 10 * time.Second}
 
 // postWebhook POSTs the event as JSON; errors are logged, never fatal.
 func postWebhook(url string, ev Event) {
@@ -292,15 +314,73 @@ func postWebhook(url string, ev Event) {
 	if err != nil {
 		return
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webhookClient.Do(req)
 	if err != nil {
 		slog.Warn("webhook post failed", slog.String("err", err.Error()))
 		return
 	}
 	_ = resp.Body.Close()
+}
+
+// webhookDispatch serializes webhook events through one worker and a
+// bounded queue (queueLen), so a slow endpoint coalesces load instead of
+// spawning one goroutine per event. It stops on the watch context or its
+// own stop channel and, on shutdown, drains whatever is still queued
+// before exiting so no alert is dropped by an abrupt teardown.
+type webhookDispatch struct {
+	url  string
+	ch   chan Event
+	stop chan struct{}
+	wg   sync.WaitGroup
+}
+
+const webhookQueueLen = 64
+
+func newWebhookDispatch(url string, ctx context.Context) *webhookDispatch {
+	d := &webhookDispatch{url: url, ch: make(chan Event, webhookQueueLen), stop: make(chan struct{})}
+	d.wg.Add(1)
+	go d.run(ctx)
+	return d
+}
+
+func (d *webhookDispatch) run(ctx context.Context) {
+	defer d.wg.Done()
+	for {
+		select {
+		case ev := <-d.ch:
+			postWebhook(d.url, ev)
+		case <-ctx.Done():
+			d.drain()
+			return
+		case <-d.stop:
+			d.drain()
+			return
+		}
+	}
+}
+
+// drain posts anything still queued before the worker exits.
+func (d *webhookDispatch) drain() {
+	for {
+		select {
+		case ev := <-d.ch:
+			postWebhook(d.url, ev)
+		default:
+			return
+		}
+	}
+}
+
+// close stops accepting work and waits for queued/in-flight posts to
+// drain. Called exactly once via the Run teardown defer; it terminates
+// the worker even when the watch context was never cancelled (e.g. the
+// fsnotify event channel closed), so it never blocks forever.
+func (d *webhookDispatch) close() {
+	close(d.stop)
+	d.wg.Wait()
 }

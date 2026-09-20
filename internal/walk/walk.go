@@ -5,6 +5,7 @@ package walk
 
 import (
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -142,6 +143,19 @@ func matchGlob(pattern, path string, isDir bool) bool {
 	return false
 }
 
+// UnreadableError reports files that could not be read during a scan. A
+// scan with unreadable files still returns every readable sibling's
+// entry; Paths holds the root-relative paths of the files that failed so
+// callers can exclude them from missing reports and surface an error exit.
+type UnreadableError struct {
+	Paths []string // root-relative, slash-separated
+	Errs  []error
+}
+
+func (e *UnreadableError) Error() string {
+	return fmt.Sprintf("%d file(s) unreadable: %s", len(e.Paths), errors.Join(e.Errs...))
+}
+
 // Scan walks root, hashes every included regular file, and returns
 // entries sorted by path. Symlinks are never followed: they are skipped
 // (pointing into or out of the tree) so tampering via link swap is not
@@ -166,21 +180,24 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 	pool.Start(algo)
 
 	var (
-		mu      sync.Mutex
-		entries []*model.Entry
-		errs    []error
+		mu         sync.Mutex
+		entries    []*model.Entry
+		errs       []error
+		unreadable []string // root-relative, slash-separated
 	)
 	collect := func(e *model.Entry) {
 		mu.Lock()
 		entries = append(entries, e)
 		mu.Unlock()
 	}
-	// addErr appends an error under mu. It is called from both the WalkDir
-	// callback (serial in the walker goroutine) and the errWG drain goroutine,
-	// so all appends to errs must be mutex-guarded to avoid a data race.
-	addErr := func(e error) {
+	// addErr records an unreadable file (by its root-relative path) and
+	// its error. It is called from both the WalkDir callback (serial in
+	// the walker goroutine) and the errWG drain goroutine, so all appends
+	// must be mutex-guarded to avoid a data race.
+	addErr := func(e error, rel string) {
 		mu.Lock()
 		errs = append(errs, e)
+		unreadable = append(unreadable, rel)
 		mu.Unlock()
 	}
 	var drainWG sync.WaitGroup
@@ -198,17 +215,22 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 	errWG.Add(1)
 	go func() {
 		defer errWG.Done()
-		for e := range pool.Errors() {
-			mu.Lock()
-			errs = append(errs, e)
-			mu.Unlock()
+		for je := range pool.Errors() {
+			if je.Entry == nil {
+				mu.Lock()
+				errs = append(errs, je.Err)
+				mu.Unlock()
+				continue
+			}
+			addErr(je.Err, je.Entry.Path)
 		}
 	}()
 
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Report unreadable paths as errors but keep scanning siblings.
-			addErr(fmt.Errorf("walk %s: %w", path, err))
+			rel, _ := filepath.Rel(root, path)
+			addErr(fmt.Errorf("walk %s: %w", path, err), filepath.ToSlash(rel))
 			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -235,7 +257,7 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 			// a link to a regular file is hashed through its target.
 			link, err := StatEntry(path, relSlash)
 			if err != nil {
-				addErr(err)
+				addErr(err, relSlash)
 				return nil
 			}
 			if opts.FollowSymlinks {
@@ -274,7 +296,7 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 		}
 		entry, err := StatEntry(path, relSlash)
 		if err != nil {
-			addErr(err)
+			addErr(err, relSlash)
 			return nil
 		}
 		pool.Submit(hash.Job{Path: path, Entry: entry})
@@ -292,7 +314,7 @@ func Scan(root string, opts Options) ([]model.Entry, error) {
 	errWG.Wait()   // per-file hash errors collected
 
 	if len(errs) > 0 {
-		return entriesToSlice(entries), errs[0]
+		return entriesToSlice(entries), &UnreadableError{Paths: unreadable, Errs: errs}
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	return entriesToSlice(entries), nil

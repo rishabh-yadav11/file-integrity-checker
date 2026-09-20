@@ -150,10 +150,10 @@ func TestPoolWorkerPanicBecomesError(t *testing.T) {
 	p.Close()
 	p.Wait()
 	first := false
-	for err := range p.Errors() {
+	for je := range p.Errors() {
 		first = true
-		if !strings.Contains(err.Error(), "panicked") && !strings.Contains(err.Error(), "unsupported") {
-			t.Fatalf("unexpected error shape: %v", err)
+		if !strings.Contains(je.Err.Error(), "panicked") && !strings.Contains(je.Err.Error(), "unsupported") {
+			t.Fatalf("unexpected error shape: %v", je.Err)
 		}
 	}
 	for range p.Results() {

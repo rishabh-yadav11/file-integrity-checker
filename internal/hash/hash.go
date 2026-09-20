@@ -77,6 +77,13 @@ type Job struct {
 	Entry *model.Entry
 }
 
+// JobError pairs a failed hashing job with its entry so callers can
+// report which file was unreadable (entry.Path is the root-relative path).
+type JobError struct {
+	Entry *model.Entry
+	Err   error
+}
+
 // Pool runs hashing jobs across a bounded worker pool.
 // Results are delivered on the returned channel; errCh carries per-file
 // read errors so callers can fail without losing successful siblings.
@@ -84,7 +91,7 @@ type Pool struct {
 	workers int
 	jobs    chan Job
 	results chan *model.Entry
-	errCh   chan error
+	errCh   chan JobError
 	wg      sync.WaitGroup
 }
 
@@ -100,7 +107,7 @@ func NewPool(workers int) *Pool {
 		workers: workers,
 		jobs:    make(chan Job, workers*4),
 		results: make(chan *model.Entry, workers*4),
-		errCh:   make(chan error, workers*4),
+		errCh:   make(chan JobError, workers*4),
 	}
 	return p
 }
@@ -128,7 +135,7 @@ func (p *Pool) Start(algo model.Algorithm) {
 					return FileBuffer(job.Path, algo, chunk)
 				}()
 				if err != nil {
-					p.errCh <- err
+					p.errCh <- JobError{Entry: job.Entry, Err: err}
 					continue
 				}
 				job.Entry.Hash = sum
@@ -157,7 +164,7 @@ func (p *Pool) Close() { close(p.jobs) }
 func (p *Pool) Results() <-chan *model.Entry { return p.results }
 
 // Errors is the channel of per-file errors.
-func (p *Pool) Errors() <-chan error { return p.errCh }
+func (p *Pool) Errors() <-chan JobError { return p.errCh }
 
 // Wait blocks until all workers finish and closes result/error channels.
 func (p *Pool) Wait() {

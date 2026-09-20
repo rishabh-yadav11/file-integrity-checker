@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/rishabh-yadav11/file-integrity-checker/internal/config"
 )
 
 // TestFlagCompletionsAndFormats exercises --algo validation, --format json,
@@ -321,5 +325,53 @@ func TestInitWarnsBaselineInsideTree(t *testing.T) {
 	code, out = runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", "outside.json")
 	if code != ExitOK || contains(out, "baseline is inside the watched tree") {
 		t.Fatalf("unexpected warning for outside baseline: %d %s", code, out)
+	}
+}
+
+// TestColorHelpers exercises the color-precedence helpers: NO_COLOR
+// disables the tty default, an explicit color flag wins, and an unset
+// flag falls back to the config value.
+func TestColorHelpers(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	if isatty() {
+		t.Fatal("NO_COLOR must disable tty color default")
+	}
+	if !colorBool(true, config.Config{}) {
+		t.Fatal("explicit color=true must win")
+	}
+	on := true
+	if !colorBool(false, config.Config{Color: &on}) {
+		t.Fatal("config color=true must apply when the flag is unset")
+	}
+	off := false
+	if colorBool(false, config.Config{Color: &off}) {
+		t.Fatal("config color=false must apply when the flag is unset")
+	}
+	c := &cobra.Command{}
+	c.Flags().Bool("color", false, "")
+	if cmdColor(c, "color") {
+		t.Fatal("unset color flag must read false")
+	}
+	if err := c.Flags().Set("color", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if !cmdColor(c, "color") {
+		t.Fatal("color flag set true must read true")
+	}
+}
+
+// TestExecute verifies the top-level Execute() entrypoint maps os.Args
+// through ExecuteMain and returns the correct exit code.
+func TestExecute(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "x.log"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"ic", "init", dir, "--baseline", filepath.Join(dir, "b.json")}
+	t.Setenv("IC_KEY", "k")
+	if code := Execute(); code != ExitOK {
+		t.Fatalf("Execute(init) = %d, want 0", code)
 	}
 }

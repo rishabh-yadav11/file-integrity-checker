@@ -145,7 +145,7 @@ func resolveKey(cfg config.Config) ([]byte, error) {
 		return []byte(env), nil
 	}
 	if cfg.KeyFile != "" {
-		if fi, err := os.Stat(cfg.KeyFile); err == nil && fi.Mode().Perm()&0o077 != 0 {
+		if fi, err := os.Stat(cfg.KeyFile); err == nil && loosePerms(fi) {
 			if !cfg.AllowLooseKeyfile {
 				return nil, fmt.Errorf("keyfile %s is group/world readable (mode %04o); refusing - re-chmod it to 0600 or pass --allow-loose-keyfile to override",
 					cfg.KeyFile, fi.Mode().Perm())
@@ -174,7 +174,7 @@ func (r *runtime) loadBaseline() (model.Baseline, error) {
 		}
 		return b, err
 	}
-	if fi, serr := os.Stat(r.cfg.Baseline); serr == nil && fi.Mode().Perm()&0o077 != 0 {
+	if fi, serr := os.Stat(r.cfg.Baseline); serr == nil && loosePerms(fi) {
 		r.log.Warn("baseline file is group/world readable; store it 0600",
 			slog.String("path", r.cfg.Baseline),
 			slog.String("mode", fmt.Sprintf("%04o", fi.Mode().Perm())))

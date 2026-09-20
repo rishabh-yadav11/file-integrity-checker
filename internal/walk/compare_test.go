@@ -380,3 +380,35 @@ func TestCompareSingleFileLegacyRoot(t *testing.T) {
 		t.Fatalf("legacy single-file results = %+v, want one unmodified a.log", res)
 	}
 }
+
+// TestCompareDeletedSingleFileBaseline verifies that checking a path that
+// was baselined as a single file and has since been deleted is reported
+// MISSING (a finding), not a raw stat error (M3).
+func TestCompareDeletedSingleFileBaseline(t *testing.T) {
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	f := filepath.Join(root, "a.log")
+	base := model.Baseline{
+		Algorithm: opts.Algo,
+		Root:      root,
+		Entries:   []model.Entry{{Path: "a.log", Hash: "x", Algorithm: opts.Algo}},
+	}
+	if err := os.Remove(f); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Compare(f, base, opts)
+	if err != nil {
+		t.Fatalf("deleted single file must not be a stat error: %v", err)
+	}
+	if len(results) != 1 || results[0].Path != "a.log" || results[0].Kind != model.KindMissing {
+		t.Fatalf("deleted single file = %+v, want MISSING a.log", results)
+	}
+}
+
+// TestIsWithinEmptyParent verifies an empty parent root contains every path.
+func TestIsWithinEmptyParent(t *testing.T) {
+	t.Parallel()
+	if !isWithin("/any/absolute/path", "") {
+		t.Fatal("empty parent should contain everything")
+	}
+}

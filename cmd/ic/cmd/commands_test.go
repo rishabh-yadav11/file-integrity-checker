@@ -478,3 +478,119 @@ func TestInitSingleFileBaselineRoundTrip(t *testing.T) {
 		t.Fatalf("post-update check: %d %s", code, out)
 	}
 }
+
+// TestUpdateRejectsOutsideRoot verifies that `update` refuses a target
+// outside the baseline root instead of writing "../x" entries that would
+// make every later check report a false MISSING.
+func TestUpdateRejectsOutsideRoot(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(dir, "outside.log")
+	if err := os.WriteFile(outside, []byte("O"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	code, out := runCLIIn(t, dir, dir, env, "update", outside, "--baseline", bl)
+	if code != ExitError {
+		t.Fatalf("outside-root update = %d, want 2:\n%s", code, out)
+	}
+	if !strings.Contains(out, "outside baseline root") {
+		t.Fatalf("expected outside-root error, got: %s", out)
+	}
+	// A later check of the tree must stay clean: no "../outside.log" entry
+	// may have leaked into the baseline.
+	code, out = runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", bl)
+	if code != ExitOK || strings.Contains(out, "MISSING") {
+		t.Fatalf("check after rejected outside update = %d, want clean:\n%s", code, out)
+	}
+}
+
+// TestUpdatePrunesDeletedSingleFile verifies that updating a path that
+// no longer exists prunes its entry from the baseline instead of failing
+// on Lstat and leaving it as a permanent MISSING.
+func TestUpdatePrunesDeletedSingleFile(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "b.log"), []byte("B"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if err := os.Remove(filepath.Join(logs, "b.log")); err != nil {
+		t.Fatal(err)
+	}
+	// Updating the deleted file must prune it, not error out.
+	code, out := runCLIIn(t, dir, dir, env, "update", filepath.Join(logs, "b.log"), "--baseline", bl)
+	if code != ExitOK {
+		t.Fatalf("update of deleted single file = %d, want 0:\n%s", code, out)
+	}
+	// check clean: b.log pruned, a.log still tracked.
+	code, out = runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", bl)
+	if code != ExitOK || strings.Contains(out, "MISSING") {
+		t.Fatalf("post-delete check = %d, want clean:\n%s", code, out)
+	}
+}
+
+// TestCheckUnreadableKeepsSiblings verifies that one unreadable file no
+// longer aborts the whole check: readable siblings are still reported,
+// the unreadable file is named (not MISSING), and the run exits 2.
+func TestCheckUnreadableKeepsSiblings(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(logs, "secret.log")
+	if err := os.WriteFile(secret, []byte("S"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(dir, "b.json")
+	if code, out := runCLIIn(t, dir, dir, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if err := os.Chmod(secret, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.Open(secret); err == nil {
+		f.Close()
+		t.Skip("running as root; permission checks are ineffective")
+	}
+	t.Cleanup(func() { _ = os.Chmod(secret, 0o600) })
+
+	code, out := runCLIIn(t, dir, dir, env, "check", "logs", "--baseline", bl)
+	if code != ExitError {
+		t.Fatalf("unreadable check = %d, want 2:\n%s", code, out)
+	}
+	if !strings.Contains(out, "UNMODIFIED a.log") {
+		t.Fatalf("readable sibling must still be reported:\n%s", out)
+	}
+	if !strings.Contains(out, "secret.log") {
+		t.Fatalf("unreadable file must be named:\n%s", out)
+	}
+	if strings.Contains(out, "MISSING") {
+		t.Fatalf("unreadable file must not be reported MISSING:\n%s", out)
+	}
+}

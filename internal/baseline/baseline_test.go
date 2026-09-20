@@ -323,3 +323,23 @@ func TestSaveCreatesMissingParentDir(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 }
+
+// TestSaveCreatesParentDir verifies Save creates the baseline's parent
+// directory when it does not exist yet (--baseline state/b.json on the
+// first run).
+func TestSaveCreatesParentDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "state", "nested")
+	path := filepath.Join(nested, "baseline.json")
+	st, _ := New(testKey())
+	if err := st.Save(path, sampleBaseline(time.Now())); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := os.Stat(nested); err != nil {
+		t.Fatalf("parent dir not created: %v", err)
+	}
+	if _, err := st.Load(path); err != nil {
+		t.Fatalf("Load after creating parent: %v", err)
+	}
+}

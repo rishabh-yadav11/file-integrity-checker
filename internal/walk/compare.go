@@ -2,6 +2,7 @@ package walk
 
 import (
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,9 +50,11 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 		return nil, err
 	}
 	var (
-		current    []model.Entry
-		singleFile bool
-		scope      string // non-empty when checking a subdir of the root
+		current       []model.Entry
+		singleFile    bool
+		scope         string // non-empty when checking a subdir of the root
+		unreadableErr *UnreadableError
+		missingSkip   = map[string]bool{}
 	)
 	if !info.IsDir() {
 		// Single-file check: re-hash just that file and compare it
@@ -107,7 +110,13 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 		var err error
 		current, err = Scan(root, opts)
 		if err != nil {
-			return nil, err
+			if !errors.As(err, &unreadableErr) {
+				return nil, err
+			}
+			// Unreadable files: still compare every readable sibling; the
+			// UnreadableError is propagated at the end so the caller can
+			// surface it (with an error exit code) without losing the
+			// results that did come back.
 		}
 		// Map scan-relative paths onto baseRoot-relative paths so a
 		// subdirectory check compares against the right baseline entries
@@ -116,6 +125,16 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 			scope = off
 			for i := range current {
 				current[i].Path = off + "/" + current[i].Path
+			}
+		}
+		// Unreadable files exist on disk but could not be verified; they
+		// must never be reported as MISSING (they did not vanish).
+		if unreadableErr != nil {
+			for _, p := range unreadableErr.Paths {
+				if scope != "" {
+					p = scope + "/" + p
+				}
+				missingSkip[p] = true
 			}
 		}
 	}
@@ -147,6 +166,11 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 	}
 	for _, e := range base.Entries {
 		if _, ok := currentByPath[e.Path]; !ok {
+			// An unreadable file did not vanish; only it could not be
+			// verified. Never report it as MISSING.
+			if missingSkip[e.Path] {
+				continue
+			}
 			// Respect the same include/exclude filters as the scan:
 			// a baseline entry outside the requested view is out of
 			// scope, not missing. (E.g. `check --exclude cache/**`
@@ -167,6 +191,9 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 			}
 			out = append(out, model.Result{Path: e.Path, Kind: model.KindMissing})
 		}
+	}
+	if unreadableErr != nil {
+		return out, unreadableErr
 	}
 	return out, nil
 }
