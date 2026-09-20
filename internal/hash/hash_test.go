@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,5 +160,47 @@ func TestPoolWorkerPanicBecomesError(t *testing.T) {
 	}
 	if first {
 		t.Log("converted to error")
+	}
+}
+
+// TestFileLarge1GB verifies the chunked hashing path handles a 1 GiB file
+// correctly and matches an independent full-read reference digest (final
+// acceptance: a 1GB file test must pass).
+func TestFileLarge1GB(t *testing.T) {
+	const size = 1 << 30
+	dir := t.TempDir()
+	p := filepath.Join(dir, "big.bin")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(size); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := File(p, model.AlgoSHA256)
+	if err != nil {
+		t.Fatalf("File(1GiB): %v", err)
+	}
+	if len(got) != 64 {
+		t.Fatalf("sha256 hex length = %d, want 64", len(got))
+	}
+
+	// Independent reference digest via stdlib sha256 over a full read.
+	h := sha256.New()
+	rf, err := os.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(h, rf); err != nil {
+		t.Fatal(err)
+	}
+	_ = rf.Close()
+	want := hex.EncodeToString(h.Sum(nil))
+	if got != want {
+		t.Fatalf("1GiB hash mismatch:\n got %s\nwant %s", got, want)
 	}
 }
