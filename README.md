@@ -147,56 +147,6 @@ Command-line flags override the config file; the HMAC key comes from
 `IC_KEY` or `--keyfile` (config `key_file:` works too) and is never
 stored in the baseline.
 
-## Threat model
-
-`integrity-check` defends against **offline tampering of log files**: an
-attacker (or insider) who edits, truncates, replaces, or deletes log
-files after the fact and hopes nobody notices. It provides strong
-evidence of modification, provided the baseline and key were created
-before the attacker had access.
-
-### What it detects
-
-- Modified file contents (SHA-256/512/BLAKE2b digest mismatch)
-- Size, permission, or mtime changes, even if content matches a stale hash
-- New files appearing inside watched trees, and baseline files that vanish
-
-### What it does NOT defend against
-
-- **Key or baseline compromise.** The HMAC key and the baseline file must
-  be stored out of band (different host, offline media). An attacker who
-  can rewrite the baseline *and* holds the key can re-sign their edits.
-  `verify-baseline` only proves the file matches its own HMAC.
-- **Replay of an old signed baseline.** Each baseline carries a monotonic
-  `sequence` number covered by the HMAC. Because the tool is stateless,
-  the HMAC check alone cannot detect that a *whole older* baseline has
-  been restored. To close this, store the current sequence number out of
-  band (e.g. append it to your cron/audit log) and alert when a loaded
-  baseline's sequence is not greater than the last one you saw.
-- **Live attackers racing the watcher.** Watch mode is best-effort;
-  `fsnotify` events are debounced, not a security boundary. Always run
-  `check` from a trusted context for audit conclusions. Watch compares
-  against the baseline snapshot loaded at startup: run `update` before
-  starting `watch`, or restart `watch` after updating the baseline.
-- **Attacker with root on the scanning host.** A root attacker can
-  subvert the binary, its config, or the kernel. Run integrity-check
-  from read-only media against a read-only mount for high-assurance use.
-- **Symlink games.** Symlinks are never followed or hashed: the scanner
-  records the link (its target string) and never descends a directory
-  symlink (`WalkDir` does not follow them), and a symlink where a regular
-  file was recorded shows as `modified`. The final component of a hashed
-  path is opened with `O_NOFOLLOW`, which closes the stat-then-open race
-  on that component. A symlink raced into an *intermediate* path
-  component mid-hash is not separately guarded (guarding every component
-  would require `openat`-style per-component walks), so treat the scanner
-  as a strong defense against link swaps, not as a mount-point boundary.
-- **Case-only rename on a case-insensitive filesystem.** Renaming a file
-  from `Foo.log` to `foo.log` on a case-insensitive volume (default on
-  macOS/Windows) changes no bytes; the scanner treats `Foo.log` and
-  `foo.log` as distinct paths, so it may report the old name `MISSING`
-  and the new name `NEW` even though the content is identical. Run
-  `update` after such a rename, or scan with `--ignore-mtime` (content
-  only) to reduce the noise.
 
 ### Operational guidance
 
