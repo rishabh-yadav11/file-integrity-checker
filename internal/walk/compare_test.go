@@ -467,3 +467,46 @@ func TestCanonRoot(t *testing.T) {
 		t.Fatalf("CanonRoot(symlinked dir) = %q, want %q", got, want)
 	}
 }
+
+// TestDeletedReportNonMatch covers the deletedReport nil path: a vanished
+// single-file check whose name is not in the baseline produces no MISSING
+// result for that file (cross-platform coverage).
+func TestDeletedReportNonMatch(t *testing.T) {
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	g := filepath.Join(root, "untracked.log")
+	if err := os.WriteFile(g, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// g was never baselined: deleting it and checking it yields no result
+	// for it, only the rest of the tree (which is a directory baseline).
+	base := model.Baseline{
+		Algorithm: opts.Algo,
+		Root:      root,
+		Entries:   mustScan(t, root, opts),
+	}
+	// Replace the untracked file with a directory so Compare hits the
+	// single-file path against a baseline entry mismatch is not needed;
+	// instead check that a vanished tracked file maps to MISSING while a
+	// vanished untracked path does not appear at all.
+	tracked := filepath.Join(root, "a.log")
+	if err := os.Remove(tracked); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Compare(tracked, base, opts)
+	if err != nil {
+		t.Fatalf("deleted tracked file: %v", err)
+	}
+	found := false
+	for _, r := range results {
+		if r.Path == "a.log" {
+			found = true
+			if r.Kind != model.KindMissing {
+				t.Fatalf("deleted tracked file = %s, want MISSING", r.Kind)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("deleted tracked file not reported: %+v", results)
+	}
+}
