@@ -510,3 +510,29 @@ func TestDeletedReportNonMatch(t *testing.T) {
 		t.Fatalf("deleted tracked file not reported: %+v", results)
 	}
 }
+
+// TestCompareDeletedRootReportsAllMissing verifies that when the checked
+// directory root itself has been deleted, every baselined entry is
+// reported MISSING (a finding) rather than a raw stat error (M3).
+// Cross-platform: the all-MISSING loop is shared code, uncovered on
+// Windows where unix-only tests are excluded.
+func TestCompareDeletedRootReportsAllMissing(t *testing.T) {
+	root := makeTree(t)
+	opts := Options{Algo: model.AlgoSHA256}
+	base := model.Baseline{Algorithm: opts.Algo, Root: root, Entries: mustScan(t, root, opts)}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	results, err := Compare(root, base, opts)
+	if err != nil {
+		t.Fatalf("deleted root should not be a stat error: %v", err)
+	}
+	if len(results) != len(base.Entries) {
+		t.Fatalf("deleted root = %d results, want %d (all entries MISSING)", len(results), len(base.Entries))
+	}
+	for _, r := range results {
+		if r.Kind != model.KindMissing {
+			t.Fatalf("deleted root entry %s = %s, want MISSING", r.Path, r.Kind)
+		}
+	}
+}
