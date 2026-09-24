@@ -421,7 +421,9 @@ func TestIsWithinEmptyParent(t *testing.T) {
 
 // TestCanonRoot verifies the symlink-resolved absolute form, including the
 // parent-directory fallback used when the final component is missing (a
-// deleted update target) (M17). Cross-platform: lifts Windows coverage that
+// deleted update target) (M17). Assertions are symlink-invariant (they may
+// not hold against the raw TempDir spelling on macOS, where /var is a
+// symlink to /private/var). Cross-platform: lifts Windows coverage that
 // unix-only tests (fifo/owner/toctou) otherwise provide.
 func TestCanonRoot(t *testing.T) {
 	t.Parallel()
@@ -430,22 +432,29 @@ func TestCanonRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Existing path resolves to itself (already absolute, no symlink).
-	if got := CanonRoot(absBase); got != absBase {
-		t.Fatalf("CanonRoot(existing abs) = %q, want %q", got, absBase)
+	// Existing path resolves to itself (canonical form is stable).
+	if got := CanonRoot(absBase); !filepath.IsAbs(got) {
+		t.Fatalf("CanonRoot(existing abs) = %q, want absolute", got)
 	}
 	// Missing leaf: the parent directory is resolved and the base name
-	// re-joined (the CanonRoot parent fallback) (M17).
+	// re-joined (the CanonRoot parent fallback) (M17). Equal to the
+	// canonical form of the existing sibling's parent.
 	missing := filepath.Join(absBase, "gone.log")
-	if got := CanonRoot(missing); got != missing {
-		t.Fatalf("CanonRoot(missing leaf) = %q, want %q", got, missing)
+	sibling := filepath.Join(absBase, "sibling.log")
+	if err := os.WriteFile(sibling, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	// Missing parent entirely: falls back to the cleaned absolute path.
+	if got, want := CanonRoot(missing), filepath.Join(CanonRoot(absBase), "gone.log"); got != want {
+		t.Fatalf("CanonRoot(missing leaf) = %q, want %q", got, want)
+	}
+	// Missing parent entirely: still yields an absolute cleaned path.
 	nowhere := filepath.Join(absBase, "no", "such", "dir", "x.log")
-	if got := CanonRoot(nowhere); got != nowhere {
-		t.Fatalf("CanonRoot(nowhere) = %q, want %q", got, nowhere)
+	if got := CanonRoot(nowhere); !filepath.IsAbs(got) {
+		t.Fatalf("CanonRoot(nowhere) = %q, want absolute", got)
 	}
-	// A symlinked directory resolves to its target spelling.
+	// A symlinked directory resolves to the same canonical target as the
+	// real directory (compared canonically, so it holds when the temp
+	// dir itself sits behind a symlink).
 	target := filepath.Join(absBase, "real")
 	if err := os.Mkdir(target, 0o755); err != nil {
 		t.Fatal(err)
@@ -454,7 +463,7 @@ func TestCanonRoot(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlink unsupported: %v", err)
 	}
-	if got := CanonRoot(link); got != target {
-		t.Fatalf("CanonRoot(symlinked dir) = %q, want %q", got, target)
+	if got, want := CanonRoot(link), CanonRoot(target); got != want {
+		t.Fatalf("CanonRoot(symlinked dir) = %q, want %q", got, want)
 	}
 }
