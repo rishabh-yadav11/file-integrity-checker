@@ -127,7 +127,7 @@ func TestUnreadableFileExitsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	if f, err := os.Open(secret); err == nil {
-		f.Close()
+		_ = f.Close()
 		t.Skip("running as root; permission checks are ineffective")
 	}
 	t.Cleanup(func() { _ = os.Chmod(secret, 0o600) })
@@ -550,6 +550,54 @@ func TestUpdatePrunesDeletedSingleFile(t *testing.T) {
 	}
 }
 
+// TestUpdateDeletedFileSymlinkRoot verifies that updating a deleted path
+// does not spuriously fail when the baseline root and the target are
+// written through different symlink spellings of the same directory
+// (macOS /var -> /private/var). t.TempDir() sits under a symlink on
+// macOS, so Getwd returns the physical path while a caller-supplied
+// absolute argument keeps the logical one; without canonicalization the
+// Rel containment check rejects an in-tree target as "outside baseline
+// root" (M17). Reproduced here on any platform via an explicit symlink.
+func TestUpdateDeletedFileSymlinkRoot(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	logs := filepath.Join(real, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "a.log"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "b.log"), []byte("B"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	env := map[string]string{"IC_KEY": "k"}
+	bl := filepath.Join(base, "b.json")
+	// init with cwd through the symlink: Getwd resolves it to the physical
+	// path, so the stored baseline Root is the resolved spelling.
+	if code, out := runCLIIn(t, link, link, env, "init", "logs", "--baseline", bl); code != ExitOK {
+		t.Fatalf("init: %d %s", code, out)
+	}
+	if err := os.Remove(filepath.Join(logs, "b.log")); err != nil {
+		t.Fatal(err)
+	}
+	// Update the deleted file via the logical (symlinked) absolute path;
+	// it is in-tree and must prune, not error.
+	code, out := runCLIIn(t, link, link, env, "update", filepath.Join(link, "logs", "b.log"), "--baseline", bl)
+	if code != ExitOK {
+		t.Fatalf("update of deleted file via symlink path = %d, want 0:\n%s", code, out)
+	}
+	// check clean: b.log pruned, a.log still tracked.
+	code, out = runCLIIn(t, link, link, env, "check", filepath.Join(link, "logs"), "--baseline", bl)
+	if code != ExitOK || strings.Contains(out, "MISSING") {
+		t.Fatalf("post-delete symlink check = %d, want clean:\n%s", code, out)
+	}
+}
+
 // TestCheckUnreadableKeepsSiblings verifies that one unreadable file no
 // longer aborts the whole check: readable siblings are still reported,
 // the unreadable file is named (not MISSING), and the run exits 2.
@@ -575,7 +623,7 @@ func TestCheckUnreadableKeepsSiblings(t *testing.T) {
 		t.Fatal(err)
 	}
 	if f, err := os.Open(secret); err == nil {
-		f.Close()
+		_ = f.Close()
 		t.Skip("running as root; permission checks are ineffective")
 	}
 	t.Cleanup(func() { _ = os.Chmod(secret, 0o600) })

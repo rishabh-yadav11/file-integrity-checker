@@ -12,14 +12,32 @@ import (
 	"github.com/rishabh-yadav11/file-integrity-checker/internal/model"
 )
 
-// absRoot returns the absolute form of a scan/check root, tolerating
-// errors by returning the input unchanged.
-func absRoot(p string) string {
+// CanonRoot returns the absolute, symlink-resolved form of a scan/check
+// root. Symlinks early in the path (e.g. macOS /var -> /private/var) can
+// otherwise make two spellings of the same tree compare unequal: one side
+// resolved through the kernel (Getwd) and the other kept literal (M17).
+// A missing final component (e.g. a deleted update target) is tolerated
+// by resolving its parent directory and re-joining the base name, so the
+// resolved prefix still matches the baseline root.
+func CanonRoot(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return p
 	}
+	if r, err := filepath.EvalSymlinks(abs); err == nil {
+		return r
+	}
+	dir, base := filepath.Dir(abs), filepath.Base(abs)
+	if rd, err := filepath.EvalSymlinks(dir); err == nil {
+		return filepath.Join(rd, base)
+	}
 	return abs
+}
+
+// absRoot returns the canonical absolute form of a scan/check root
+// (symlink-resolved), tolerating errors by returning the input unchanged.
+func absRoot(p string) string {
+	return CanonRoot(p)
 }
 
 // Compare hashes the current state of root (via Scan, or a single file)

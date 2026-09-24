@@ -48,6 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The test trap sink is mutex-guarded against data races (M15).
   - The in-tree baseline warning now fires for single-file baselines
     (M16).
+  - `init`/`update`/`check` canonicalize roots and targets through
+    symlinks, so a tree reached via two spellings of the same directory
+    (e.g. macOS /var -> /private/var) no longer fails with a false
+    "outside baseline root" and no longer leaks a copy of the baseline
+    path (M17).
 - **Low**
   - Wrong-key HMAC failures say so instead of only "tampered" (L3).
   - Watch debounce uses a one-shot timer instead of a perpetual ticker
@@ -70,6 +75,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     added baseline/key ignores (D3, D4), fixed the version ldflags
     comment (D5), added `shell: bash` to the gofmt CI step (D6), pinned
     golangci-lint (D7) and the release Go version (D8).
+  - Pinned CI to golangci-lint-action v8 with golangci-lint v2.13.2 and
+    added a `.gitattributes` enforcing LF line endings so gofmt stays
+    clean on Windows checkouts (D9).
 
 ### Security
 

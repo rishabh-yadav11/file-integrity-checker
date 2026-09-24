@@ -180,27 +180,34 @@ func newUpdateCmd() *cobra.Command {
 			// the parent dir. Treat the parent as the effective root so
 			// updates merge under the right paths instead of writing
 			// "../"-prefixed entries.
+			baseRoot := walk.CanonRoot(base.Root)
 			abs, absErr := filepath.Abs(args[0])
 			if absErr != nil {
 				return absErr
 			}
-			if stat, statErr := os.Stat(abs); statErr == nil && !stat.IsDir() && base.Root == abs {
-				base.Root = filepath.Dir(abs)
+			// Canonicalize the target too: on platforms where an early
+			// path component is a symlink (macOS /var -> /private/var),
+			// one side reaches the same tree via the kernel-resolved
+			// root while the other spelling is kept literal; Rel must
+			// compare equal spellings (M17).
+			canonAbs := walk.CanonRoot(args[0])
+			if stat, statErr := os.Stat(abs); statErr == nil && !stat.IsDir() && baseRoot == canonAbs {
+				baseRoot = filepath.Dir(canonAbs)
 			}
 			prefix := ""
-			if rel, relErr := filepath.Rel(base.Root, abs); relErr == nil {
+			if rel, relErr := filepath.Rel(baseRoot, canonAbs); relErr == nil {
 				s := filepath.ToSlash(rel)
 				// Reject a target that escapes the baseline root: writing
 				// "../x" entries would make every later check report a
 				// false MISSING for a path outside the tree.
 				if s == ".." || strings.HasPrefix(s, "../") {
-					return fmt.Errorf("update: %s is outside baseline root %s", abs, base.Root)
+					return fmt.Errorf("update: %s is outside baseline root %s", canonAbs, baseRoot)
 				}
 				if s != "." {
 					prefix = s + "/"
 				}
 			} else {
-				return fmt.Errorf("update: %s is outside baseline root %s", abs, base.Root)
+				return fmt.Errorf("update: %s is outside baseline root %s", canonAbs, baseRoot)
 			}
 			// Determine whether args[0] is a file or directory, and the
 			// exact relative path of a single-file target, so the merge
@@ -211,22 +218,21 @@ func newUpdateCmd() *cobra.Command {
 			// Lstat, so `rm x; update x` drops the entry instead of
 			// erroring and leaving it as a permanent MISSING.
 			vanished := statErr != nil && os.IsNotExist(statErr)
-			dirUpdate := true
-			if statErr == nil && !info.IsDir() {
-				dirUpdate = false
-			}
+			// statErr != nil short-circuits so info (nil on error) is not
+			// dereferenced; the merged form is staticcheck QF1007-clean.
+			dirUpdate := statErr != nil || info.IsDir()
 			// For a vanished target the stat can no longer tell file from
 			// dir; fall back to the baseline. A path that matches an entry
 			// exactly was a single file (prune just that entry); otherwise
 			// it is a directory scope (prune everything under the prefix).
 			if vanished {
-				if relDir, relErr := filepath.Rel(base.Root, filepath.Dir(abs)); relErr == nil {
+				if relDir, relErr := filepath.Rel(baseRoot, filepath.Dir(canonAbs)); relErr == nil {
 					if s := filepath.ToSlash(relDir); s != "." {
 						prefix = s + "/"
 					}
 				}
 				for _, e := range base.Entries {
-					if e.Path == prefix+filepath.Base(abs) {
+					if e.Path == prefix+filepath.Base(canonAbs) {
 						dirUpdate = false
 						break
 					}
@@ -237,17 +243,17 @@ func newUpdateCmd() *cobra.Command {
 				// Single-file update: scan() names the entry by base
 				// name, so it maps onto the file's own directory inside
 				// the baseline root, not under a nested dir of itself.
-				dirRel := filepath.ToSlash(filepath.Dir(abs))
-				relDir, relErr := filepath.Rel(base.Root, dirRel)
+				dirRel := filepath.ToSlash(filepath.Dir(canonAbs))
+				relDir, relErr := filepath.Rel(baseRoot, dirRel)
 				if relErr != nil {
-					return fmt.Errorf("update: %s is outside baseline root %s", abs, base.Root)
+					return fmt.Errorf("update: %s is outside baseline root %s", canonAbs, baseRoot)
 				}
 				if s := filepath.ToSlash(relDir); s == "." {
 					prefix = ""
 				} else {
 					prefix = s + "/"
 				}
-				relTarget = prefix + filepath.Base(abs)
+				relTarget = prefix + filepath.Base(canonAbs)
 			}
 			// Hash the current state, unless the target has vanished
 			// (already accepted as a deletion above: nothing left to scan,

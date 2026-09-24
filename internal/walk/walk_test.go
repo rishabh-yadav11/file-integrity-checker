@@ -509,7 +509,7 @@ func TestScanUnreadableKeepsSiblings(t *testing.T) {
 		t.Fatal(err)
 	}
 	if f, err := os.Open(secret); err == nil {
-		f.Close()
+		_ = f.Close()
 		t.Skip("running as root; permission checks are ineffective")
 	}
 	t.Cleanup(func() { _ = os.Chmod(secret, 0o600) })
