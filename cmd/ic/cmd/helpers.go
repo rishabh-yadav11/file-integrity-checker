@@ -121,7 +121,7 @@ func loadRuntime(cmd *cobra.Command) (*runtime, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	lg, err := config.SetupLogger(cfg.LogFile, cfg.LogLevel)
+	lg, _, err := config.SetupLogger(cfg.LogFile, cfg.LogLevel)
 	if err != nil {
 		return nil, err
 	}

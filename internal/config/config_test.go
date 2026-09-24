@@ -149,17 +149,18 @@ func TestValidateErrors(t *testing.T) {
 func TestSetupLogger(t *testing.T) {
 	t.Parallel()
 	// stderr logger
-	lg, err := SetupLogger("", "debug")
+	lg, _, err := SetupLogger("", "debug")
 	if err != nil {
 		t.Fatal(err)
 	}
 	lg.Debug("hello", "k", 1)
 	// file logger
 	p := filepath.Join(t.TempDir(), "ic.log")
-	lg2, err := SetupLogger(p, "warn")
+	lg2, close2, err := SetupLogger(p, "warn")
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = close2() }()
 	lg2.Info("should-not-appear") // below level
 	lg2.Warn("should-appear")
 	raw, err := os.ReadFile(p)
@@ -176,7 +177,7 @@ func TestSetupLogger(t *testing.T) {
 		t.Fatal("info line written at warn level")
 	}
 	// bad level
-	if _, err := SetupLogger("", "chatty"); err == nil {
+	if _, _, err := SetupLogger("", "chatty"); err == nil {
 		t.Fatal("expected error for unknown level")
 	}
 }
@@ -197,15 +198,16 @@ func containsLevel(s, sub string) bool {
 func TestSetupLoggerToFile(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "log.txt")
-	lg, err := SetupLogger(f, "debug")
+	lg, closeFn, err := SetupLogger(f, "debug")
 	if err != nil {
 		t.Fatalf("SetupLogger: %v", err)
 	}
+	defer func() { _ = closeFn() }()
 	lg.Info("hello")
 	if _, err := os.Stat(f); err != nil {
 		t.Fatalf("log file not created: %v", err)
 	}
-	if _, err := SetupLogger("", "bogus"); err == nil {
+	if _, _, err := SetupLogger("", "bogus"); err == nil {
 		t.Fatal("unknown level must error")
 	}
 }

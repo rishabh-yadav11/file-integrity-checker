@@ -91,19 +91,27 @@ func Compare(root string, base model.Baseline, opts Options) ([]model.Result, er
 		if err != nil {
 			return nil, err
 		}
+		// The containment check must compare equal spellings of the same
+		// tree: the baseline root is symlink-canonicalized above, so the
+		// target must be too (macOS /var -> /private/var, Windows 8.3
+		// short names) or Rel spuriously reports "outside baseline root"
+		// (M17). Only the parent directory is resolved and the leaf name
+		// kept literal, so a symlink target is still recorded under its
+		// own name (never resolved to its target).
+		canonAbs := filepath.Join(absRoot(filepath.Dir(abs)), filepath.Base(abs))
 		// Legacy single-file baselines stored Root as the file itself;
 		// their entries are keyed by base name relative to the parent
 		// directory, so treat the parent as the effective root.
 		effRoot := baseRoot
-		if base.Root != "" && absRoot(base.Root) == abs {
-			effRoot = filepath.Dir(abs)
+		if base.Root != "" && absRoot(base.Root) == canonAbs {
+			effRoot = filepath.Dir(canonAbs)
 		}
-		rel, err := filepath.Rel(effRoot, abs)
+		rel, err := filepath.Rel(effRoot, canonAbs)
 		if err != nil {
 			return nil, err
 		}
 		if isOutside(rel) {
-			return nil, fmt.Errorf("check: %s is outside baseline root %s (baseline was created for %s)", abs, baseRoot, base.Root)
+			return nil, fmt.Errorf("check: %s is outside baseline root %s (baseline was created for %s)", canonAbs, baseRoot, base.Root)
 		}
 		e, err := StatEntry(abs, filepath.ToSlash(rel))
 		if err != nil {
@@ -274,11 +282,15 @@ func deletedReport(root string, base model.Baseline, baseRoot string) *model.Res
 	if err != nil {
 		return nil
 	}
+	// Canonicalize for the Rel comparison, matching the canonical
+	// baseRoot supplied by Compare. The leaf is gone, so only the parent
+	// directory is resolved and the base name re-joined (M17).
+	canonAbs := filepath.Join(absRoot(filepath.Dir(abs)), filepath.Base(abs))
 	effRoot := baseRoot
-	if base.Root != "" && absRoot(base.Root) == abs {
-		effRoot = filepath.Dir(abs)
+	if base.Root != "" && absRoot(base.Root) == canonAbs {
+		effRoot = filepath.Dir(canonAbs)
 	}
-	rel, err := filepath.Rel(effRoot, abs)
+	rel, err := filepath.Rel(effRoot, canonAbs)
 	if err != nil {
 		return nil
 	}

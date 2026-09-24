@@ -46,3 +46,29 @@ func TestVerifyBaselineWarnsOnLoosePerms(t *testing.T) {
 		t.Fatalf("unexpected perms warning for 0600 baseline: %s", out)
 	}
 }
+
+// TestKeyfileLoosePermsRefused verifies a group/world-readable keyfile is
+// refused by default and accepted only with --allow-loose-keyfile.
+// POSIX-only: Windows has no meaningful perms bits, so keyfiles are never
+// refused there (H6).
+func TestKeyfileLoosePermsRefused(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "x.log"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kf := filepath.Join(dir, "key.bin")
+	if err := os.WriteFile(kf, []byte("filekey"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bl := filepath.Join(dir, "b.json")
+	code, out := runCLIIn(t, dir, dir, map[string]string{},
+		"init", dir, "--baseline", bl, "--keyfile", kf)
+	if code != ExitError || !strings.Contains(out, "refusing") {
+		t.Fatalf("loose keyfile init = %d, want refused:\n%s", code, out)
+	}
+	code, out = runCLIIn(t, dir, dir, map[string]string{},
+		"init", dir, "--baseline", bl, "--keyfile", kf, "--allow-loose-keyfile")
+	if code != ExitOK {
+		t.Fatalf("loose keyfile with override = %d, want 0:\n%s", code, out)
+	}
+}

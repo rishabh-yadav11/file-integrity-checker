@@ -66,11 +66,15 @@ func newInitCmd() *cobra.Command {
 			// Compare against the effective scan root (`root`, which for
 			// a single-file baseline is the parent dir), so the in-tree
 			// warning fires for a baseline stored next to the file too
-			// (M16).
-			if rel, relErr := filepath.Rel(root, absBase); relErr == nil && rel != ".." && !strings.HasPrefix(rel, "../") {
-				r.log.Warn("baseline is inside the watched tree; it is auto-excluded from scans - store it outside the tree so it cannot be modified in place",
-					slog.String("baseline", r.cfg.Baseline),
-					slog.String("root", root))
+			// (M16). Slash-normalize the Rel result so the "../" prefix
+			// test also holds on Windows (backslash separators).
+			if rel, relErr := filepath.Rel(root, absBase); relErr == nil {
+				relSlash := filepath.ToSlash(rel)
+				if relSlash != ".." && !strings.HasPrefix(relSlash, "../") {
+					r.log.Warn("baseline is inside the watched tree; it is auto-excluded from scans - store it outside the tree so it cannot be modified in place",
+						slog.String("baseline", r.cfg.Baseline),
+						slog.String("root", root))
+				}
 			}
 			if r.cfg.Format == "json" {
 				_ = json.NewEncoder(stdout()).Encode(map[string]any{

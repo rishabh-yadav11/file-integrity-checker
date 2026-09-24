@@ -53,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (e.g. macOS /var -> /private/var) no longer fails with a false
     "outside baseline root" and no longer leaks a copy of the baseline
     path (M17).
+  - Fixed Windows CI-failing paths surfaced once unit tests ran there:
+    single-file `compare` canonicalizes the parent dir while keeping the
+    leaf literal (symlinks still recorded), `init` slash-normalizes the
+    Rel result so the in-tree baseline warning respects Windows
+    backslash separators, and the POSIX-only loose-keyfile test moved
+    under the unix build tag (M18).
+  - `config.SetupLogger` now returns a close function so the log-file
+    handle can be released; the logger tests close it, fixing a Windows
+    "file in use" cleanup failure (M19).
 - **Low**
   - Wrong-key HMAC failures say so instead of only "tampered" (L3).
   - Watch debounce uses a one-shot timer instead of a perpetual ticker

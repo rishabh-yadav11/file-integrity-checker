@@ -460,22 +460,28 @@ func TestExcludedDirAndExcludeAbs(t *testing.T) {
 		t.Fatal("ExcludedDir(other) should be false")
 	}
 
+	// Use a real absolute temp path (not a hardcoded POSIX literal) so
+	// the exact-match/prefix/clean semantics hold on Windows too.
+	base := t.TempDir()
+
 	plain := Options{}
-	if plain.excludeAbs("/tmp/foo") {
+	if plain.excludeAbs(base) {
 		t.Fatal("excludeAbs with no ExcludePaths must be false")
 	}
-	with := Options{ExcludePaths: []string{"/tmp/foo"}}
-	if !with.excludeAbs("/tmp/foo") {
-		t.Fatal("excludeAbs(/tmp/foo) should match itself")
+	with := Options{ExcludePaths: []string{filepath.Clean(base)}}
+	if !with.excludeAbs(base) {
+		t.Fatal("excludeAbs should match itself")
 	}
-	if with.excludeAbs("/tmp/foo/bar") {
+	if with.excludeAbs(filepath.Join(base, "bar")) {
 		t.Fatal("excludeAbs must match exact cleaned paths, not prefixes")
 	}
-	if with.excludeAbs("/tmp/other") {
-		t.Fatal("excludeAbs(/tmp/other) should be false")
+	if with.excludeAbs(filepath.Join(filepath.Dir(base), "other")) {
+		t.Fatal("excludeAbs(/other) should be false")
 	}
-	if with.excludeAbs("./tmp/foo") {
-		t.Fatal("excludeAbs must clean the candidate before comparing")
+	// A candidate spelling that cleans to the excluded path must match.
+	spelled := filepath.Join(base, ".")
+	if !with.excludeAbs(spelled) {
+		t.Fatalf("excludeAbs(%q) should clean to %q and match", spelled, base)
 	}
 }
 

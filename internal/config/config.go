@@ -165,8 +165,11 @@ func (cfg Config) Validate() error {
 }
 
 // SetupLogger returns a slog logger writing to LogFile (or stderr when
-// empty) at the given level ("debug", "info", "warn", "error").
-func SetupLogger(logFile, level string) (*slog.Logger, error) {
+// empty) at the given level ("debug", "info", "warn", "error"). The
+// returned closeFunc closes the underlying file when one was opened
+// (no-op for stderr), so callers can release the handle (Windows cannot
+// delete/lock a file that is still open).
+func SetupLogger(logFile, level string) (lg *slog.Logger, closeFunc func() error, err error) {
 	var lv slog.Level
 	switch level {
 	case "debug":
@@ -178,15 +181,17 @@ func SetupLogger(logFile, level string) (*slog.Logger, error) {
 	case "error":
 		lv = slog.LevelError
 	default:
-		return nil, fmt.Errorf("config: unknown log level %q", level)
+		return nil, nil, fmt.Errorf("config: unknown log level %q", level)
 	}
 	var w = os.Stderr
+	closeFunc = func() error { return nil }
 	if logFile != "" {
 		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err != nil {
-			return nil, fmt.Errorf("config: open log file: %w", err)
+			return nil, nil, fmt.Errorf("config: open log file: %w", err)
 		}
 		w = f
+		closeFunc = f.Close
 	}
-	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: lv})), nil
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: lv})), closeFunc, nil
 }
