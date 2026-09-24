@@ -577,3 +577,25 @@ func TestScanFollowSymlinkOutsideRootWarns(t *testing.T) {
 		t.Fatalf("expected an outside-root warning, got: %v", warns)
 	}
 }
+
+// TestMatchGlobPrefix verifies the matchGlob prefix and no-slash branches
+// (cross-platform; not unix-gated) that widen scan coverage.
+func TestMatchGlobPrefix(t *testing.T) {
+	t.Parallel()
+	// doublestar literal match.
+	if !matchGlob("logs/**.log", "logs/a.log", false) {
+		t.Fatal("logs/**.log should match logs/a.log")
+	}
+	// Directory prefix "/**" matches paths under the dir.
+	if !matchGlob("logs/**", "logs/x/y.log", true) {
+		t.Fatal("logs/** should match logs/x/y.log for a dir")
+	}
+	// Pattern without slash matches any path component.
+	if !matchGlob("*.log", "a/b/c.log", false) {
+		t.Fatal("*.log should match a/b/c.log")
+	}
+	// Non-matching returns false.
+	if matchGlob("other/**", "logs/x/y.log", true) {
+		t.Fatal("other/** should not match logs/x/y.log")
+	}
+}
